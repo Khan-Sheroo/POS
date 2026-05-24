@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class DayEnd(db.Model):
+class DayEnd(TenantModel):
     __tablename__ = "day_ends"
     __table_args__ = (db.UniqueConstraint("user_id", "trading_date", name="uq_day_end_trading_date"),)
 

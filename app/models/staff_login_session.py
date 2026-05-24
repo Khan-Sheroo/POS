@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class StaffLoginSession(db.Model):
+class StaffLoginSession(TenantModel):
     """Terminal staff logins — multiple staff may be logged in at once."""
 
     __tablename__ = "staff_login_sessions"

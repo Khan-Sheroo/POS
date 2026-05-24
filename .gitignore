@@ -36,6 +36,7 @@ instance/
 *.db
 *.sqlite
 *.sqlite3
+!instance/.gitkeep
 
 # Testing / tooling
 .pytest_cache/

@@ -1,3 +1,4 @@
+from .tenant_account import TenantAccount  # noqa: F401
 from .user import User  # noqa: F401
 from .category import Category  # noqa: F401
 from .temperature_group import TemperatureGroup  # noqa: F401

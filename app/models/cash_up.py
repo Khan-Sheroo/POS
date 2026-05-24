@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class CashUp(db.Model):
+class CashUp(TenantModel):
     __tablename__ = "cash_ups"
     __table_args__ = (
         db.UniqueConstraint("user_id", "trading_date", name="uq_cash_up_user_trading_date"),

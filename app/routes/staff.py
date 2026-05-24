@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, g, jsonify, request, current_app
 
 from app.models import Staff
 from app.services.staff_session_service import (
@@ -23,9 +23,13 @@ def _staff_json(s: Staff) -> dict:
 
 
 def _issue_staff_token(staff: Staff, user_id: int) -> dict:
+    tenant_id = getattr(request, "tenant_id", None) or getattr(g, "tenant_id", None)
+    if tenant_id is None:
+        raise RuntimeError("tenant_id missing for staff token")
     token = create_staff_token(
         staff_id=staff.id,
         company_user_id=user_id,
+        tenant_id=int(tenant_id),
         role=staff.role,
         secret=current_app.config["JWT_SECRET_KEY"],
         algorithm=current_app.config["JWT_ALGORITHM"],

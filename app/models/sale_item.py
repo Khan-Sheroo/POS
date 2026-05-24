@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class SaleItem(db.Model):
+class SaleItem(TenantModel):
     __tablename__ = "sale_items"
 
     id = db.Column(db.Integer, primary_key=True)

@@ -7,49 +7,59 @@ from flask import Flask, jsonify
 from sqlalchemy.exc import OperationalError
 
 from app.extensions import db
-from config import DevelopmentConfig, ProductionConfig
+from app.tenant import clear_tenant_binding
+from config import DevelopmentConfig, ProductionConfig, apply_database_config
 
 
 def create_app(env: str | None = None) -> Flask:
     load_dotenv()
 
-    app = Flask(__name__)
+    flask_app = Flask(__name__, instance_relative_config=True)
 
     env = (env or os.getenv("APP_ENV") or "development").lower()
     if env in {"prod", "production"}:
-        app.config.from_object(ProductionConfig)
+        flask_app.config.from_object(ProductionConfig)
     else:
-        app.config.from_object(DevelopmentConfig)
+        flask_app.config.from_object(DevelopmentConfig)
 
-    db.init_app(app)
+    apply_database_config(flask_app)
+    db.init_app(flask_app)
 
-    from app.cli import register_cli
+    with flask_app.app_context():
+        import app.models  # noqa: F401
+
+        db.create_all(bind_key="registry")
+
+    from app.commands import register_cli
     from app.routes import api_bp
     from app.routes.web import web_bp
 
-    register_cli(app)
-    app.register_blueprint(api_bp, url_prefix="/api")
-    app.register_blueprint(web_bp)
+    register_cli(flask_app)
+    flask_app.register_blueprint(api_bp, url_prefix="/api")
+    flask_app.register_blueprint(web_bp)
 
-    @app.errorhandler(OperationalError)
+    @flask_app.teardown_appcontext
+    def _teardown_tenant_session(_exc=None):
+        clear_tenant_binding()
+
+    @flask_app.errorhandler(OperationalError)
     def handle_db_unavailable(err):
-        # Helpful details in development; keep production response minimal.
-        if app.config.get("DEBUG"):
+        if flask_app.config.get("DEBUG"):
             return jsonify({"error": "database_unavailable", "details": str(err)}), 503
         return jsonify({"error": "database_unavailable"}), 503
 
-    @app.get("/")
+    @flask_app.get("/")
     def index():
         return jsonify(
             {
                 "name": "POS_system API",
                 "health": "/api/health",
+                "multi_tenant": True,
             }
         )
 
-    @app.get("/favicon.ico")
+    @flask_app.get("/favicon.ico")
     def favicon():
         return ("", 204)
 
-    return app
-
+    return flask_app

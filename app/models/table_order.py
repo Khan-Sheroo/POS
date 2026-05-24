@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class TableOrder(db.Model):
+class TableOrder(TenantModel):
     __tablename__ = "table_orders"
 
     id = db.Column(db.Integer, primary_key=True)

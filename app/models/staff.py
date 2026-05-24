@@ -5,9 +5,10 @@ from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class Staff(db.Model):
+class Staff(TenantModel):
     __tablename__ = "staff"
 
     id = db.Column(db.Integer, primary_key=True)

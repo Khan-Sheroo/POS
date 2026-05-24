@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class AccountEntry(db.Model):
+class AccountEntry(TenantModel):
     __tablename__ = "account_entries"
 
     id = db.Column(db.Integer, primary_key=True)

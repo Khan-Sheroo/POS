@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class TemperatureOption(db.Model):
+class TemperatureOption(TenantModel):
     __tablename__ = "temperature_options"
 
     id = db.Column(db.Integer, primary_key=True)

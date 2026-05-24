@@ -9,6 +9,7 @@ def create_access_token(
     *,
     user_id: int,
     email: str,
+    tenant_id: int,
     secret: str,
     algorithm: str,
     expires_seconds: int,
@@ -18,6 +19,7 @@ def create_access_token(
     payload = {
         "sub": str(user_id),
         "email": email,
+        "tid": int(tenant_id),
         "typ": "user",
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=expires_seconds)).timestamp()),
@@ -34,6 +36,7 @@ def create_staff_token(
     *,
     staff_id: int,
     company_user_id: int,
+    tenant_id: int,
     role: str,
     secret: str,
     algorithm: str,
@@ -43,6 +46,7 @@ def create_staff_token(
     payload = {
         "sub": str(staff_id),
         "company_user_id": int(company_user_id),
+        "tid": int(tenant_id),
         "role": role,
         "typ": "staff",
         "iat": int(now.timestamp()),

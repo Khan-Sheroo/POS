@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from app.extensions import db
+from app.models.base import TenantModel
 
 
-class TableOrderItem(db.Model):
+class TableOrderItem(TenantModel):
     __tablename__ = "table_order_items"
 
     id = db.Column(db.Integer, primary_key=True)
