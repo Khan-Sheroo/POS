@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Show Tables • POS System{% endblock %}
+
+{% block head %}
+  <style>
+    [data-bs-theme="dark"] .show-tables-table-btn {
+      background-color: #fff !important;
+      color: #000 !important;
+      border-color: #212529 !important;
+    }
+    [data-bs-theme="dark"] .show-tables-table-btn:hover,
+    [data-bs-theme="dark"] .show-tables-table-btn:focus,
+    [data-bs-theme="dark"] .show-tables-table-btn:active {
+      background-color: #f8f9fa !important;
+      color: #000 !important;
+      border-color: #212529 !important;
+    }
+    [data-bs-theme="dark"] .show-tables-table-btn .show-tables-table-meta {
+      color: #333 !important;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h1 class="h4 mb-0">Tables</h1>
+    <button id="reloadBtn" class="btn btn-outline-secondary btn-sm">Reload</button>
+  </div>
+
+  <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div id="emptyState" class="p-4 text-body-secondary">
+        No tables yet. Create one with <a href="/tables/new">New Table</a>.
+      </div>
+
+      <div id="tablesGrid" class="row g-2 d-none"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const reloadBtn = document.getElementById("reloadBtn");
+    const errorBox = document.getElementById("errorBox");
+    const emptyState = document.getElementById("emptyState");
+    const tablesGrid = document.getElementById("tablesGrid");
+
+    function getToken() {
+      return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+    }
+
+    function requireTokenOrRedirect() {
+      const staff = localStorage.getItem("staff_token");
+      if (!staff) {
+        const ret = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/staff/login?reason=login_required&return=${ret}`);
+        return null;
+      }
+      return staff;
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("d-none");
+    }
+
+    function clearError() {
+      errorBox.textContent = "";
+      errorBox.classList.add("d-none");
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function loadTables() {
+      clearError();
+      tablesGrid.innerHTML = "";
+      emptyState.classList.remove("d-none");
+      tablesGrid.classList.add("d-none");
+
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+
+      try {
+        const res = await fetch("/api/tables", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+
+        if (!res.ok) {
+          showError(data && data.error ? `Failed: ${data.error}` : "Failed to load tables.");
+          return;
+        }
+
+        if (!Array.isArray(data) || data.length === 0) {
+          return;
+        }
+
+        emptyState.classList.add("d-none");
+        tablesGrid.classList.remove("d-none");
+
+        for (const t of data) {
+          const col = document.createElement("div");
+          col.className = "col-6 col-sm-4 col-md-3";
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn btn-outline-dark show-tables-table-btn w-100 text-start";
+          btn.style.minHeight = "92px";
+          btn.innerHTML = `
+            <div class="fw-semibold">Table #${escapeHtml(t.table_number)}</div>
+            <div class="show-tables-table-meta text-body-secondary small">Pax: ${escapeHtml(t.pax_count)}</div>
+            <div class="show-tables-table-meta text-body-secondary small text-truncate">Tap to open</div>
+          `;
+          btn.addEventListener("click", () => {
+            window.location.assign(`/tables/${t.id}/order`);
+          });
+
+          col.appendChild(btn);
+          tablesGrid.appendChild(col);
+        }
+      } catch (err) {
+        showError("Network error. Please try again.");
+      }
+    }
+
+    reloadBtn.addEventListener("click", loadTables);
+
+    requireTokenOrRedirect();
+    loadTables();
+  </script>
+{% endblock %}

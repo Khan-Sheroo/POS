@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Today’s Summary • POS System</title>
+    <script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = stored || (systemDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-bs-theme", theme);
+      })();
+    </script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body>
+    <nav class="navbar bg-body border-bottom">
+      <div class="container">
+        <a class="navbar-brand" href="/tables/list">POS System</a>
+        <div class="ms-auto d-flex gap-2">
+          <a href="/tables/list" class="btn btn-outline-dark btn-sm">Tables</a>
+          <button id="themeToggle" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
+          <button id="logoutBtn" class="btn btn-outline-secondary btn-sm">Switch user</button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="container py-3 py-lg-4">
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 mb-0">Today’s Summary</h1>
+        <div class="d-flex gap-2 align-items-center">
+          <span class="text-body-secondary small d-none d-sm-inline">Auto-refresh 45s</span>
+          <button id="refreshBtn" class="btn btn-outline-secondary btn-sm" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div id="reportError" class="alert alert-danger d-none" role="alert"></div>
+
+      <div class="row g-3">
+        <div class="col-12 col-sm-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="text-body-secondary">Total sales</div>
+              <div class="display-6 fw-semibold"><span class="currencyPrefix">R</span><span id="totalSales">0.00</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-sm-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="text-body-secondary">Transactions</div>
+              <div class="display-6 fw-semibold"><span id="txnCount">0</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-sm-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="text-body-secondary">Cash total</div>
+              <div class="display-6 fw-semibold"><span class="currencyPrefix">R</span><span id="cashTotal">0.00</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-sm-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="text-body-secondary">Card total</div>
+              <div class="display-6 fw-semibold"><span class="currencyPrefix">R</span><span id="cardTotal">0.00</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-body-secondary small mt-3">
+        <span>Last updated:</span> <span id="lastUpdated">—</span>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const themeToggle = document.getElementById("themeToggle");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+
+      const reportError = document.getElementById("reportError");
+      const totalSalesEl = document.getElementById("totalSales");
+      const txnCountEl = document.getElementById("txnCount");
+      const cashTotalEl = document.getElementById("cashTotal");
+      const cardTotalEl = document.getElementById("cardTotal");
+      const lastUpdatedEl = document.getElementById("lastUpdated");
+
+      function getTheme() {
+        return document.documentElement.getAttribute("data-bs-theme") || "light";
+      }
+
+      function setTheme(theme) {
+        document.documentElement.setAttribute("data-bs-theme", theme);
+        localStorage.setItem("theme", theme);
+        updateThemeToggleLabel();
+      }
+
+      function updateThemeToggleLabel() {
+        const theme = getTheme();
+        themeToggle.textContent = theme === "dark" ? "Night" : "Day";
+      }
+
+      function getCurrencyPrefix() {
+        const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+        if (c === "USD") return "$";
+        if (c === "GBP") return "£";
+        return "R";
+      }
+      function applyCurrencyPrefix() {
+        const cur = getCurrencyPrefix();
+        document.querySelectorAll(".currencyPrefix").forEach((el) => (el.textContent = cur));
+      }
+
+      function getToken() {
+        return localStorage.getItem("access_token");
+      }
+
+      function requireTokenOrRedirect() {
+        const token = getToken();
+        if (!token) window.location.assign("/login");
+        return token;
+      }
+
+      function showError(message) {
+        reportError.textContent = message;
+        reportError.classList.remove("d-none");
+      }
+
+      function clearError() {
+        reportError.textContent = "";
+        reportError.classList.add("d-none");
+      }
+
+      async function loadTodayReport() {
+        applyCurrencyPrefix();
+        clearError();
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch("/api/reports/today", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (!res.ok) {
+            showError("Failed to load today’s summary.");
+            return;
+          }
+
+          totalSalesEl.textContent = data && data.total_sales != null ? String(data.total_sales) : "0.00";
+          txnCountEl.textContent =
+            data && data.transaction_count != null ? String(data.transaction_count) : "0";
+          cashTotalEl.textContent = data && data.cash_total != null ? String(data.cash_total) : "0.00";
+          cardTotalEl.textContent = data && data.card_total != null ? String(data.card_total) : "0.00";
+          lastUpdatedEl.textContent = new Date().toLocaleString();
+        } catch (e) {
+          showError("Network error. Please try again.");
+        }
+      }
+
+      logoutBtn.addEventListener("click", () => {
+        localStorage.removeItem("staff_token");
+        localStorage.removeItem("staff_id");
+        localStorage.removeItem("staff_name");
+        localStorage.removeItem("staff_role");
+        sessionStorage.removeItem("pos_authorized");
+        window.location.assign("/staff/login?switch=1");
+      });
+
+      themeToggle.addEventListener("click", () => {
+        setTheme(getTheme() === "dark" ? "light" : "dark");
+      });
+
+      refreshBtn.addEventListener("click", loadTodayReport);
+
+      requireTokenOrRedirect();
+      updateThemeToggleLabel();
+      loadTodayReport();
+      window.setInterval(loadTodayReport, 45_000);
+    </script>
+  </body>
+</html>
+

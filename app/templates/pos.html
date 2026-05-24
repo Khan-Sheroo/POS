@@ -1,0 +1,1017 @@
+{% extends "base.html" %}
+
+{% block title %}POS • POS System{% endblock %}
+
+{% block head %}
+  <style>
+    .btn-orange {
+      --bs-btn-color: #fff;
+      --bs-btn-bg: #fd7e14;
+      --bs-btn-border-color: #fd7e14;
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: #e96b02;
+      --bs-btn-hover-border-color: #e96b02;
+      --bs-btn-active-color: #fff;
+      --bs-btn-active-bg: #d65f02;
+      --bs-btn-active-border-color: #d65f02;
+      --bs-btn-focus-shadow-rgb: 253, 126, 20;
+    }
+
+    /* Exact spacing between categories and products */
+    #categoriesWrap {
+      margin-bottom: 10px !important;
+    }
+
+    /* Print only the receipt */
+    @media print {
+      body * {
+        visibility: hidden !important;
+      }
+      #printReceipt,
+      #printReceipt * {
+        visibility: visible !important;
+      }
+      #printReceipt {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 80mm;
+        padding: 8mm 6mm;
+        background: #fff !important;
+        color: #000 !important;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div id="posAccessGate" class="alert alert-warning mb-3 d-none" role="alert">
+    Manager authorization is required to use POS. Enter the manager PIN to continue.
+  </div>
+
+  <div id="posMainContent">
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <div class="fw-semibold text-nowrap">Table:</div>
+        <div class="d-flex flex-wrap gap-2 align-items-center flex-grow-1">
+          <div id="tableAssigned" class="d-none align-items-center gap-2">
+            <span class="text-body-secondary">Current:</span>
+            <span class="fw-semibold" id="currentTableLabel">—</span>
+            <button id="changeTableBtn" class="btn btn-outline-secondary btn-sm" type="button">Change</button>
+          </div>
+          <form id="tableAssignForm" class="d-flex gap-2 align-items-center">
+            <input
+              id="tableNumberInput"
+              class="form-control form-control-sm"
+              style="width: 74px"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              step="1"
+              placeholder="1"
+              required
+              readonly
+            />
+            <button id="openTableBtn" class="btn btn-primary btn-sm" type="submit">Open</button>
+          </form>
+        </div>
+      </div>
+      <div id="tableAssignError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+    </div>
+  </div>
+
+  <!-- Table exists confirmation -->
+  <div class="modal fade" id="tableExistsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Table already open</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="tableExistsText" class="mb-0"></div>
+          <div class="text-body-secondary small mt-2">If you choose to view it, a manager PIN is required.</div>
+          <div id="tableExistsErr" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="tableExistsViewBtn" type="button" class="btn btn-primary">Open existing table</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manager PIN modal (table view authorization) -->
+  <div class="modal fade" id="tableManagerPinModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Manager PIN required</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="text-center">
+            <div class="fw-semibold">Enter manager PIN</div>
+            <div class="fs-3 fw-semibold mt-2" id="tableMgrPinDots">_ _ _ _</div>
+          </div>
+          <div id="tableMgrPinError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+
+          <div class="row g-2 mt-3 justify-content-center">
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="1">1</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="2">2</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="3">3</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="4">4</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="5">5</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="6">6</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="7">7</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="8">8</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="9">9</button></div>
+            <div class="col-4"><button id="tableMgrClear" class="btn btn-outline-danger w-100 py-3">Clear</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 t-mgr-key" data-key="0">0</button></div>
+            <div class="col-4"><button id="tableMgrBack" class="btn btn-outline-secondary w-100 py-3">⌫</button></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="tableMgrAuthorizeBtn" type="button" class="btn btn-primary" disabled>Authorize</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 g-lg-4">
+        <div class="col-12 col-lg-7">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h1 class="h4 mb-0">Products</h1>
+            <button id="reloadBtn" class="btn btn-outline-secondary btn-sm">Reload</button>
+          </div>
+
+          <div id="categoriesWrap" class="d-none mb-2">
+            <ul
+              id="categoriesPills"
+              class="nav nav-pills flex-wrap gap-2"
+            ></ul>
+          </div>
+
+          <div id="productsAlert" class="alert alert-danger d-none" role="alert"></div>
+
+          <div id="productsSkeleton" class="card">
+            <div class="card-body">
+              <div class="placeholder-glow">
+                <span class="placeholder col-7"></span>
+                <span class="placeholder col-4"></span>
+                <span class="placeholder col-4"></span>
+                <span class="placeholder col-6"></span>
+                <span class="placeholder col-8"></span>
+              </div>
+              <div class="text-body-secondary small mt-2">Loading products…</div>
+            </div>
+          </div>
+
+          <div id="productsGrid" class="row g-2 d-none"></div>
+        </div>
+
+        <div class="col-12 col-lg-5">
+          <div class="sticky-lg-top" style="top: 1rem">
+            <div class="card">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h2 class="h5 mb-0">&nbsp;</h2>
+                </div>
+
+                <div id="cartList" class="list-group list-group-flush d-none"></div>
+
+                <hr class="my-3" />
+
+                <div class="d-flex justify-content-between align-items-center">
+                  <div class="text-body-secondary">Total</div>
+                  <div class="fs-5 fw-semibold"><span id="currencySymbol">$</span><span id="totalAmount">0.00</span></div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                  <button id="checkoutBtn" class="btn btn-success flex-grow-1" disabled>Pay Bill</button>
+                  <button id="printBillBtn" class="btn btn-outline-secondary flex-grow-1" type="button" disabled>
+                    Print Bill
+                  </button>
+                </div>
+                <div id="checkoutAlert" class="alert alert-success d-none mt-3 mb-0" role="alert"></div>
+                <div id="checkoutError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+  </div>
+
+  <!-- Hidden receipt used for printing -->
+  <div id="printReceipt" style="display: none">
+    <div style="font-weight: 700; font-size: 16px; margin-bottom: 4px">POS System</div>
+    <div style="font-size: 12px; margin-bottom: 8px">Bill</div>
+    <div id="printReceiptMeta" style="font-size: 12px; margin-bottom: 8px"></div>
+    <div id="printReceiptItems" style="font-size: 12px"></div>
+    <hr />
+    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700">
+      <div>Total</div>
+      <div><span id="printReceiptCurrency">R</span><span id="printReceiptTotal">0.00</span></div>
+    </div>
+  </div>
+
+    <!-- Checkout Modal -->
+    <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Pay Bill</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Total</div>
+              <div class="fs-5 fw-semibold"><span id="currencySymbolModal">$</span><span id="checkoutTotal">0.00</span></div>
+            </div>
+            <hr class="my-3" />
+            <div class="mb-2 fw-semibold">Payment method</div>
+            <div class="d-flex gap-2">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="paymentMethod" id="pmCash" value="cash" checked />
+                <label class="form-check-label" for="pmCash">Cash</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="paymentMethod" id="pmCard" value="card" />
+                <label class="form-check-label" for="pmCard">Card</label>
+              </div>
+            </div>
+            <div id="modalError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="confirmCheckoutBtn" type="button" class="btn btn-success">Pay Bill</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table numpad modal (mobile-friendly) -->
+    <div class="modal fade" id="tableNumpadModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Enter table number</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Table</div>
+              <div class="display-6 mb-0"><span id="tableDraftDisplay">1</span></div>
+            </div>
+            <div class="text-body-secondary small mt-1">Tap numbers, then Done.</div>
+
+            <div class="row g-2 mt-3">
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="1">1</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="2">2</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="3">3</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="4">4</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="5">5</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="6">6</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="7">7</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="8">8</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="9">9</button></div>
+              <div class="col-4"><button class="btn btn-outline-danger w-100 py-3" id="tableClear">Clear</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 table-key" data-key="0">0</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3" id="tableBack">⌫</button></div>
+            </div>
+
+            <div id="tableModalError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="tableDone" type="button" class="btn btn-primary">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+      const posAccessGate = document.getElementById("posAccessGate");
+      const posMainContent = document.getElementById("posMainContent");
+
+      function posAccessOk() {
+        const role = (localStorage.getItem("staff_role") || "").trim().toLowerCase();
+        return role === "manager" || sessionStorage.getItem("pos_authorized") === "1";
+      }
+
+      function applyPosAccessUi() {
+        const ok = posAccessOk();
+        if (posAccessGate) posAccessGate.classList.toggle("d-none", ok);
+        if (posMainContent) {
+          posMainContent.classList.toggle("pe-none", !ok);
+          posMainContent.classList.toggle("opacity-50", !ok);
+        }
+      }
+
+      function requirePosAccess() {
+        applyPosAccessUi();
+        if (posAccessOk()) return;
+        if (typeof openManagerAuth === "function") openManagerAuth("pos");
+      }
+
+      window.addEventListener("pos-authorized", () => applyPosAccessUi());
+      requirePosAccess();
+
+      const reloadBtn = document.getElementById("reloadBtn");
+      const productsGrid = document.getElementById("productsGrid");
+      const productsSkeleton = document.getElementById("productsSkeleton");
+      const productsAlert = document.getElementById("productsAlert");
+      const categoriesWrap = document.getElementById("categoriesWrap");
+      const categoriesPills = document.getElementById("categoriesPills");
+
+      const cartList = document.getElementById("cartList");
+      const totalAmountEl = document.getElementById("totalAmount");
+      const checkoutBtn = document.getElementById("checkoutBtn");
+      const printBillBtn = document.getElementById("printBillBtn");
+      const checkoutAlert = document.getElementById("checkoutAlert");
+      const checkoutError = document.getElementById("checkoutError");
+
+      const checkoutModalEl = document.getElementById("checkoutModal");
+      const checkoutTotalEl = document.getElementById("checkoutTotal");
+      const confirmCheckoutBtn = document.getElementById("confirmCheckoutBtn");
+      const modalError = document.getElementById("modalError");
+      const checkoutModal = new bootstrap.Modal(checkoutModalEl);
+
+      const tableAssignForm = document.getElementById("tableAssignForm");
+      const tableNumberInput = document.getElementById("tableNumberInput");
+      const openTableBtn = document.getElementById("openTableBtn");
+      const tableAssignError = document.getElementById("tableAssignError");
+      const tableNumpadModalEl = document.getElementById("tableNumpadModal");
+      const tableDraftDisplay = document.getElementById("tableDraftDisplay");
+      const tableModalError = document.getElementById("tableModalError");
+      const tableClear = document.getElementById("tableClear");
+      const tableBack = document.getElementById("tableBack");
+      const tableDone = document.getElementById("tableDone");
+      const tableNumpadModal = new bootstrap.Modal(tableNumpadModalEl);
+      let tableDraft = "1";
+
+      // Table exists / manager override flow
+      const tableExistsModalEl = document.getElementById("tableExistsModal");
+      const tableExistsModal = new bootstrap.Modal(tableExistsModalEl);
+      const tableExistsText = document.getElementById("tableExistsText");
+      const tableExistsErr = document.getElementById("tableExistsErr");
+      const tableExistsViewBtn = document.getElementById("tableExistsViewBtn");
+
+      const tableManagerPinModalEl = document.getElementById("tableManagerPinModal");
+      const tableManagerPinModal = new bootstrap.Modal(tableManagerPinModalEl);
+      const tableMgrPinDots = document.getElementById("tableMgrPinDots");
+      const tableMgrPinError = document.getElementById("tableMgrPinError");
+      const tableMgrAuthorizeBtn = document.getElementById("tableMgrAuthorizeBtn");
+      let pendingTableNumber = null;
+      let tableMgrPin = "";
+
+      const currencySymbolEl = document.getElementById("currencySymbol");
+      const currencySymbolModalEl = document.getElementById("currencySymbolModal");
+
+      const printReceiptMetaEl = document.getElementById("printReceiptMeta");
+      const printReceiptItemsEl = document.getElementById("printReceiptItems");
+      const printReceiptCurrencyEl = document.getElementById("printReceiptCurrency");
+      const printReceiptTotalEl = document.getElementById("printReceiptTotal");
+
+      /** @type {Map<number, {product: any, quantity: number}>} */
+      const cart = new Map();
+
+      /** @type {any[]} */
+      let products = [];
+      /** @type {any[]} */
+      let categories = [];
+      /** @type {number|null} */
+      let selectedCategoryId = null;
+
+      function getToken() {
+        return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+      }
+
+      function redirectToStaffLogin() {
+        const ret = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.assign(`/staff/login?reason=login_required&return=${ret}`);
+      }
+
+      function requireTokenOrRedirect() {
+        const staff = localStorage.getItem("staff_token");
+        if (!staff) {
+          redirectToStaffLogin();
+          return null;
+        }
+        return staff;
+      }
+
+      function moneyToNumber(value) {
+        if (value == null) return 0;
+        const n = Number.parseFloat(String(value));
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function formatMoney(n) {
+        return n.toFixed(2);
+      }
+
+      function getCurrencySymbol() {
+        const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+        if (c === "USD") return "$";
+        if (c === "GBP") return "£";
+        return "R";
+      }
+
+      function buildPrintReceipt() {
+        const items = [];
+        for (const [productId, entry] of cart.entries()) {
+          const p = entry.product || {};
+          const qty = Number(entry.quantity || 0);
+          const price = moneyToNumber(p.price);
+          const lineTotal = price * qty;
+          items.push({ name: String(p.name || `Product #${productId}`), qty, lineTotal });
+        }
+
+        const cur = getCurrencySymbol();
+        printReceiptCurrencyEl.textContent = cur;
+        printReceiptTotalEl.textContent = formatMoney(computeTotal());
+        printReceiptMetaEl.textContent = `Printed: ${new Date().toLocaleString()}`;
+
+        printReceiptItemsEl.innerHTML = items
+          .map((it) => {
+            const left = `${escapeHtml(it.name)} x${it.qty}`;
+            const right = `${cur}${formatMoney(it.lineTotal)}`;
+            return `<div style="display:flex;justify-content:space-between;gap:8px;"><div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${left}</div><div style="white-space:nowrap;">${right}</div></div>`;
+          })
+          .join("");
+      }
+
+      async function loadCurrencySetting() {
+        const staff = localStorage.getItem("staff_token");
+        if (staff) {
+          try {
+            const res = await fetch("/api/settings", { headers: { Authorization: `Bearer ${staff}` } });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.currency) localStorage.setItem("currency", data.currency);
+          } catch {}
+        }
+        const sym = getCurrencySymbol();
+        currencySymbolEl.textContent = sym;
+        currencySymbolModalEl.textContent = sym;
+      }
+
+      function showTableAssignError(message) {
+        tableAssignError.textContent = message;
+        tableAssignError.classList.remove("d-none");
+      }
+
+      function clearTableAssignError() {
+        tableAssignError.textContent = "";
+        tableAssignError.classList.add("d-none");
+      }
+
+      function show(el, msg) {
+        el.textContent = msg;
+        el.classList.remove("d-none");
+      }
+      function hide(el) {
+        el.textContent = "";
+        el.classList.add("d-none");
+      }
+
+      function updateTableMgrPinUI() {
+        const size = tableMgrPin.length >= 5 ? 5 : 4;
+        const slots = [];
+        for (let i = 0; i < size; i++) slots.push(i < tableMgrPin.length ? "•" : "_");
+        tableMgrPinDots.textContent = slots.join(" ");
+        tableMgrAuthorizeBtn.disabled = !(tableMgrPin.length === 4 || tableMgrPin.length === 5);
+      }
+
+      function openTableManagerPin() {
+        tableMgrPin = "";
+        hide(tableMgrPinError);
+        updateTableMgrPinUI();
+        tableManagerPinModal.show();
+      }
+
+      async function authorizeAndOpenPendingTable() {
+        hide(tableMgrPinError);
+        const token = requireTokenOrRedirect();
+        if (!token || pendingTableNumber == null) return;
+
+        tableMgrAuthorizeBtn.disabled = true;
+        tableMgrAuthorizeBtn.textContent = "Authorizing…";
+        try {
+          // Validate manager PIN first
+          const authRes = await fetch("/api/staff/authorize-manager", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ pin: tableMgrPin }),
+          });
+          const authData = await authRes.json().catch(() => ({}));
+          if (!authRes.ok) {
+            show(tableMgrPinError, authData && authData.error ? `Failed: ${authData.error}` : "Authorization failed.");
+            return;
+          }
+
+          // Re-attempt open with manager_pin override
+          const res = await fetch("/api/tables", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ table_number: pendingTableNumber, pax_count: 1, manager_pin: tableMgrPin }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            show(tableMgrPinError, data && data.error ? `Failed: ${data.error}` : "Failed to open table.");
+            return;
+          }
+          tableManagerPinModal.hide();
+          window.location.assign(`/tables/${data.id}/order`);
+        } catch (e) {
+          show(tableMgrPinError, "Network error.");
+        } finally {
+          tableMgrAuthorizeBtn.disabled = false;
+          tableMgrAuthorizeBtn.textContent = "Authorize";
+        }
+      }
+
+      function openTableNumpad() {
+        tableModalError.textContent = "";
+        tableModalError.classList.add("d-none");
+        tableDraft = String(tableNumberInput.value || "").replace(/[^\d]/g, "") || "1";
+        tableDraftDisplay.textContent = tableDraft;
+        tableNumpadModal.show();
+      }
+
+      function setTableDraft(next) {
+        tableDraft = String(next || "").replace(/[^\d]/g, "");
+        if (tableDraft.length > 3) tableDraft = tableDraft.slice(0, 3);
+        tableDraftDisplay.textContent = tableDraft || "0";
+      }
+
+      function commitTableDraft() {
+        const n = Number.parseInt(tableDraft || "0", 10);
+        if (!Number.isFinite(n) || n <= 0) {
+          tableModalError.textContent = "Table number must be at least 1.";
+          tableModalError.classList.remove("d-none");
+          return;
+        }
+        tableNumberInput.value = String(n);
+        tableNumpadModal.hide();
+      }
+
+      function setProductsError(message) {
+        productsAlert.textContent = message;
+        productsAlert.classList.remove("d-none");
+      }
+
+      function clearProductsError() {
+        productsAlert.textContent = "";
+        productsAlert.classList.add("d-none");
+      }
+
+      function renderProducts() {
+        productsGrid.innerHTML = "";
+        const filtered = products.filter((p) => {
+          if (selectedCategoryId == null) return true;
+          return p.category && p.category.id === selectedCategoryId;
+        });
+
+        for (const p of filtered) {
+          const col = document.createElement("div");
+          col.className = "col-6 col-sm-4 col-md-3";
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const categoryName = p.category && p.category.name ? String(p.category.name) : "";
+          const color = getCategoryColor(categoryName);
+          const textClass = color === "warning" ? "text-dark" : "text-white";
+          const btnColorClass = color === "orange" ? "btn-orange" : `btn-${color}`;
+          btn.className = `btn ${btnColorClass} ${textClass} w-100 h-100 d-flex align-items-center justify-content-center text-center`;
+          btn.style.minHeight = "84px";
+          btn.dataset.productId = String(p.id);
+          btn.innerHTML = `
+            <div class="fw-semibold" style="font-size: calc(1rem + 4px)">${escapeHtml(p.name || "Unnamed")}</div>
+          `;
+
+          btn.addEventListener("click", () => addToCart(p.id));
+
+          col.appendChild(btn);
+          productsGrid.appendChild(col);
+        }
+      }
+
+      function renderCategories() {
+        categoriesPills.innerHTML = "";
+
+        const makePill = (label, categoryId, color) => {
+          const li = document.createElement("li");
+          li.className = "nav-item";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const isActive = selectedCategoryId === categoryId;
+          const textClass = color === "warning" ? "text-dark" : "text-white";
+          const btnColorClass = color === "orange" ? "btn-orange" : `btn-${color}`;
+          btn.className = `btn btn-lg px-4 py-3 ${btnColorClass} ${textClass} ${
+            isActive ? "border border-3 border-dark shadow-sm" : ""
+          }`;
+          btn.textContent = label;
+          btn.addEventListener("click", () => {
+            selectedCategoryId = categoryId;
+            renderCategories();
+            renderProducts();
+          });
+          li.appendChild(btn);
+          return li;
+        };
+
+        categoriesPills.appendChild(makePill("All", null, "secondary"));
+        for (const c of categories) {
+          categoriesPills.appendChild(makePill(c.name, c.id, getCategoryColor(c.name)));
+        }
+
+        categoriesWrap.classList.toggle("d-none", categories.length === 0);
+      }
+
+      function getCategoryColor(name) {
+        const n = String(name || "").trim().toLowerCase();
+        if (n === "sides") return "orange";
+        if (n === "soft drinks") return "info";
+        if (n === "starters") return "success";
+        if (n === "mains") return "primary";
+        if (n === "desserts") return "danger";
+        if (n === "spirits") return "dark";
+        if (n === "red wine") return "danger";
+        if (n === "white wine") return "warning";
+        if (n === "liqueurs") return "secondary";
+        if (n === "extras") return "secondary";
+        return "secondary";
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      async function loadCategories() {
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch("/api/categories", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !Array.isArray(data)) {
+            categories = [];
+            renderCategories();
+            return;
+          }
+
+          categories = data;
+          renderCategories();
+        } catch (e) {
+          categories = [];
+          renderCategories();
+        }
+      }
+
+      async function loadProducts() {
+        clearProductsError();
+        productsSkeleton.classList.remove("d-none");
+        productsGrid.classList.add("d-none");
+
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch("/api/products", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            setProductsError("Failed to load products.");
+            return;
+          }
+          if (!Array.isArray(data)) {
+            setProductsError("Unexpected products response.");
+            return;
+          }
+
+          products = data;
+          renderProducts();
+          productsSkeleton.classList.add("d-none");
+          productsGrid.classList.remove("d-none");
+        } catch (e) {
+          setProductsError("Network error while loading products.");
+        } finally {
+          productsSkeleton.classList.add("d-none");
+        }
+      }
+
+      function addToCart(productId) {
+        const product = products.find((p) => p.id === productId);
+        if (!product) return;
+        const existing = cart.get(productId);
+        if (existing) {
+          existing.quantity += 1;
+        } else {
+          cart.set(productId, { product, quantity: 1 });
+        }
+        renderCart();
+      }
+
+      function updateQuantity(productId, delta) {
+        const entry = cart.get(productId);
+        if (!entry) return;
+        entry.quantity += delta;
+        if (entry.quantity <= 0) {
+          cart.delete(productId);
+        }
+        renderCart();
+      }
+
+      function computeTotal() {
+        let total = 0;
+        for (const { product, quantity } of cart.values()) {
+          total += moneyToNumber(product.price) * quantity;
+        }
+        return total;
+      }
+
+      function renderCart() {
+        const hasItems = cart.size > 0;
+        cartList.classList.toggle("d-none", !hasItems);
+        checkoutBtn.disabled = !hasItems;
+        printBillBtn.disabled = !hasItems;
+
+        if (!hasItems) {
+          cartList.innerHTML = "";
+          totalAmountEl.textContent = "0.00";
+          return;
+        }
+
+        cartList.innerHTML = "";
+        for (const [productId, entry] of cart.entries()) {
+          const p = entry.product;
+          const price = moneyToNumber(p.price);
+          const lineTotal = price * entry.quantity;
+
+          const row = document.createElement("div");
+          row.className = "list-group-item px-0";
+          row.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="flex-grow-1">
+                <div class="fw-semibold">${escapeHtml(p.name || "Unnamed")}</div>
+                <div class="text-body-secondary small">${getCurrencySymbol()}${formatMoney(price)} each</div>
+              </div>
+              <div class="text-end">
+                <div class="fw-semibold">${getCurrencySymbol()}${formatMoney(lineTotal)}</div>
+                <div class="btn-group btn-group-sm mt-1" role="group" aria-label="Quantity">
+                  <button class="btn btn-outline-secondary" data-action="dec" data-id="${productId}">-</button>
+                  <button class="btn btn-outline-secondary disabled" tabindex="-1">${entry.quantity}</button>
+                  <button class="btn btn-outline-secondary" data-action="inc" data-id="${productId}">+</button>
+                </div>
+              </div>
+            </div>
+          `;
+
+          row.querySelectorAll("button[data-action]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const id = Number.parseInt(btn.getAttribute("data-id"), 10);
+              const action = btn.getAttribute("data-action");
+              updateQuantity(id, action === "inc" ? 1 : -1);
+            });
+          });
+
+          cartList.appendChild(row);
+        }
+
+        totalAmountEl.textContent = formatMoney(computeTotal());
+      }
+
+      function clearCheckoutMessages() {
+        checkoutAlert.textContent = "";
+        checkoutAlert.classList.add("d-none");
+        checkoutError.textContent = "";
+        checkoutError.classList.add("d-none");
+      }
+
+      function showCheckoutSuccess(message) {
+        checkoutAlert.textContent = message;
+        checkoutAlert.classList.remove("d-none");
+      }
+
+      function showCheckoutError(message) {
+        checkoutError.textContent = message;
+        checkoutError.classList.remove("d-none");
+      }
+
+      reloadBtn.addEventListener("click", () => loadProducts());
+
+      checkoutBtn.addEventListener("click", () => {
+        clearCheckoutMessages();
+        modalError.textContent = "";
+        modalError.classList.add("d-none");
+
+        if (cart.size === 0) return;
+        checkoutTotalEl.textContent = formatMoney(computeTotal());
+        checkoutModal.show();
+      });
+
+      printBillBtn.addEventListener("click", () => {
+        if (cart.size === 0) return;
+        buildPrintReceipt();
+        window.print();
+      });
+
+      function getSelectedPaymentMethod() {
+        const el = document.querySelector('input[name="paymentMethod"]:checked');
+        return el ? el.value : "cash";
+      }
+
+      function cartToSaleItems() {
+        const items = [];
+        for (const [productId, entry] of cart.entries()) {
+          items.push({ product_id: productId, quantity: entry.quantity });
+        }
+        return items;
+      }
+
+      async function confirmCheckout() {
+        modalError.textContent = "";
+        modalError.classList.add("d-none");
+        clearCheckoutMessages();
+
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        const items = cartToSaleItems();
+        if (!items.length) return;
+
+        const payment_method = getSelectedPaymentMethod();
+
+        confirmCheckoutBtn.disabled = true;
+        confirmCheckoutBtn.textContent = "Processing…";
+
+        try {
+          const res = await fetch("/api/sales", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ payment_method, items }),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (!res.ok) {
+            const msg = data && data.error ? `Checkout failed: ${data.error}` : "Checkout failed.";
+            modalError.textContent = msg;
+            modalError.classList.remove("d-none");
+            return;
+          }
+
+          // Success
+          checkoutModal.hide();
+          cart.clear();
+          renderCart();
+          showCheckoutSuccess(`Sale #${data.id} created successfully.`);
+        } catch (e) {
+          modalError.textContent = "Network error. Please try again.";
+          modalError.classList.remove("d-none");
+        } finally {
+          confirmCheckoutBtn.disabled = false;
+          confirmCheckoutBtn.textContent = "Confirm";
+        }
+      }
+
+      confirmCheckoutBtn.addEventListener("click", confirmCheckout);
+
+      // On page load, ensure user has a token.
+      requireTokenOrRedirect();
+      loadCurrencySetting();
+      loadCategories();
+      loadProducts();
+      renderCart();
+
+      tableNumberInput.addEventListener("click", openTableNumpad);
+      tableNumberInput.addEventListener("focus", openTableNumpad);
+      document.querySelectorAll(".table-key").forEach((btn) => {
+        btn.addEventListener("click", () => setTableDraft((tableDraft || "") + btn.getAttribute("data-key")));
+      });
+      tableClear.addEventListener("click", () => setTableDraft(""));
+      tableBack.addEventListener("click", () => setTableDraft((tableDraft || "").slice(0, -1)));
+      tableDone.addEventListener("click", commitTableDraft);
+
+      tableAssignForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        clearTableAssignError();
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        const table_number = Number.parseInt(String(tableNumberInput.value || ""), 10);
+        if (!Number.isFinite(table_number) || table_number <= 0) {
+          showTableAssignError("Enter a valid table number.");
+          return;
+        }
+
+        openTableBtn.disabled = true;
+        openTableBtn.textContent = "Opening…";
+        try {
+          // If table exists, backend returns it; otherwise creates it.
+          const res = await fetch("/api/tables", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ table_number, pax_count: 1 }),
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+          if (res.status === 409 && data && data.error === "table_exists_owned_by_other") {
+            pendingTableNumber = table_number;
+            const ownerName = data.opened_by_staff && data.opened_by_staff.name ? data.opened_by_staff.name : "another user";
+            tableExistsText.textContent = `This Table already exists under "${ownerName}".`;
+            hide(tableExistsErr);
+            tableExistsModal.show();
+            return;
+          }
+          if (!res.ok) {
+            if (data && data.error === "table_exists_owned_by_other") {
+              // Safety: if backend returned conflict but status wasn't handled, still show friendly dialog.
+              const ownerName = data.opened_by_staff && data.opened_by_staff.name ? data.opened_by_staff.name : "another user";
+              pendingTableNumber = table_number;
+              tableExistsText.textContent = `This Table already exists under "${ownerName}".`;
+              hide(tableExistsErr);
+              tableExistsModal.show();
+              return;
+            }
+            showTableAssignError(data && data.error ? `Failed: ${data.error}` : "Failed to open table.");
+            return;
+          }
+
+          window.location.assign(`/tables/${data.id}/order`);
+        } catch (err) {
+          showTableAssignError("Network error. Please try again.");
+        } finally {
+          openTableBtn.disabled = false;
+          openTableBtn.textContent = "Open";
+        }
+      });
+
+      tableExistsViewBtn.addEventListener("click", () => {
+        tableExistsModal.hide();
+        openTableManagerPin();
+      });
+
+      document.querySelectorAll(".t-mgr-key").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (tableMgrPin.length >= 5) return;
+          tableMgrPin += btn.getAttribute("data-key");
+          updateTableMgrPinUI();
+        });
+      });
+      document.getElementById("tableMgrClear").addEventListener("click", () => {
+        tableMgrPin = "";
+        updateTableMgrPinUI();
+      });
+      document.getElementById("tableMgrBack").addEventListener("click", () => {
+        tableMgrPin = tableMgrPin.slice(0, -1);
+        updateTableMgrPinUI();
+      });
+      tableMgrAuthorizeBtn.addEventListener("click", authorizeAndOpenPendingTable);
+    </script>
+{% endblock %}
+

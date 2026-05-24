@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login • POS System</title>
+    <script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = stored || (systemDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-bs-theme", theme);
+      })();
+    </script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body class="bg-body-tertiary">
+    <main class="container">
+      <div class="row justify-content-center align-items-center min-vh-100 py-4">
+        <div class="col-12 col-sm-10 col-md-6 col-lg-4">
+          <div class="card shadow-sm">
+            <div class="card-body p-4">
+              <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                  <h1 class="h4 mb-1">Sign in</h1>
+                  <p class="text-body-secondary mb-4">Use your account to access POS.</p>
+                </div>
+                <button id="themeToggle" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
+              </div>
+
+              <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+
+              <form id="loginForm" novalidate>
+                <div class="mb-3">
+                  <label for="email" class="form-label">Email</label>
+                  <input
+                    type="email"
+                    class="form-control"
+                    id="email"
+                    name="email"
+                    autocomplete="email"
+                    inputmode="email"
+                    required
+                  />
+                </div>
+                <div class="mb-3">
+                  <label for="password" class="form-label">Password</label>
+                  <input
+                    type="password"
+                    class="form-control"
+                    id="password"
+                    name="password"
+                    autocomplete="current-password"
+                    required
+                  />
+                </div>
+                <button id="submitBtn" type="submit" class="btn btn-primary w-100">
+                  Sign in
+                </button>
+              </form>
+              <p class="text-center text-body-secondary mt-4 mb-0 small">
+                Don't have an account?
+                <a href="/register">Register here</a>
+              </p>
+            </div>
+          </div>
+          <p class="text-center text-body-secondary mt-3 mb-0 small">
+            API health: <a href="/api/health">/api/health</a>
+          </p>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const themeToggle = document.getElementById("themeToggle");
+      const form = document.getElementById("loginForm");
+      const errorBox = document.getElementById("errorBox");
+      const submitBtn = document.getElementById("submitBtn");
+
+      function getTheme() {
+        return document.documentElement.getAttribute("data-bs-theme") || "light";
+      }
+
+      function setTheme(theme) {
+        document.documentElement.setAttribute("data-bs-theme", theme);
+        localStorage.setItem("theme", theme);
+        updateThemeToggleLabel();
+      }
+
+      function updateThemeToggleLabel() {
+        const theme = getTheme();
+        themeToggle.textContent = theme === "dark" ? "Night" : "Day";
+      }
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.remove("d-none");
+      }
+
+      function clearError() {
+        errorBox.textContent = "";
+        errorBox.classList.add("d-none");
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("registered") === "1") {
+        const info = document.createElement("div");
+        info.className = "alert alert-success mb-3";
+        info.setAttribute("role", "alert");
+        info.textContent = "Account created. Please sign in.";
+        errorBox.parentNode.insertBefore(info, errorBox);
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        clearError();
+
+        const email = (document.getElementById("email").value || "").trim();
+        const password = document.getElementById("password").value || "";
+
+        if (!email || !password) {
+          showError("Email and password are required.");
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Signing in…";
+
+        try {
+          const res = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showError(data.error ? `Login failed: ${data.error}` : "Login failed.");
+            return;
+          }
+
+          if (!data.access_token) {
+            showError("Login response missing token.");
+            return;
+          }
+
+          localStorage.setItem("access_token", data.access_token);
+          localStorage.setItem("company_user_email", email);
+          localStorage.removeItem("staff_token");
+          localStorage.removeItem("staff_id");
+          localStorage.removeItem("staff_name");
+          localStorage.removeItem("staff_role");
+          sessionStorage.removeItem("pos_authorized");
+          window.location.assign("/staff/login");
+        } catch (err) {
+          showError("Network error. Please try again.");
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Sign in";
+        }
+      });
+
+      themeToggle.addEventListener("click", () => {
+        setTheme(getTheme() === "dark" ? "light" : "dark");
+      });
+
+      updateThemeToggleLabel();
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,575 @@
+{% extends "base.html" %}
+
+{% block title %}Accounts • POS System{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h4 mb-0">Customer accounts</h1>
+    <div class="d-flex gap-2 flex-wrap">
+      <button id="addBtn" class="btn btn-primary btn-sm" type="button">Add account</button>
+      <button id="reloadBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload</button>
+    </div>
+  </div>
+
+  <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+  <div id="successBox" class="alert alert-success d-none" role="alert"></div>
+
+  <p class="text-body-secondary small">
+    Create accounts for customers who settle bills later. Record payments here when a customer pays off their balance.
+  </p>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="emptyState" class="text-body-secondary">No accounts yet.</div>
+      <div class="table-responsive d-none" id="tableWrap">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Contact</th>
+              <th class="text-end">Balance owing</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="modal fade" id="settleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="settleModalTitle">Settle account</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="settleModalError" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3">
+            <div class="text-body-secondary small">Balance owing</div>
+            <div class="fs-4 fw-semibold"><span id="settleBalancePrefix">R</span><span id="settleBalance">0.00</span></div>
+          </div>
+          <label class="form-label" for="settleAmount">Payment amount</label>
+          <div class="input-group mb-2">
+            <span class="input-group-text" id="settleAmountPrefix">R</span>
+            <input id="settleAmount" class="form-control" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off" />
+          </div>
+          <button id="settleFullBtn" type="button" class="btn btn-outline-secondary btn-sm mb-3">Pay full balance</button>
+          <label class="form-label" for="settleNote">Note (optional)</label>
+          <input id="settleNote" class="form-control" type="text" placeholder="e.g. Cash, EFT reference…" autocomplete="off" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="settleSaveBtn" type="button" class="btn btn-success">Record payment</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="modal fade" id="invoicesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="invoicesModalTitle">Outstanding invoices</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="invoicesModalError" class="alert alert-danger d-none" role="alert"></div>
+          <div id="invoicesLoading" class="text-body-secondary small">Loading…</div>
+          <div id="invoicesContent" class="d-none">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+              <div>
+                <div class="text-body-secondary small">Balance owing</div>
+                <div class="fs-4 fw-semibold"><span id="invoicesBalancePrefix">R</span><span id="invoicesBalance">0.00</span></div>
+              </div>
+              <div class="text-end small text-body-secondary">
+                <div>Total charged: <span id="invoicesTotalCharges">0.00</span></div><br />
+                <div>Total paid: <span id="invoicesTotalPayments">0.00</span></div>
+              </div>
+            </div>
+            <div id="invoicesEmpty" class="alert alert-secondary py-2 small d-none" role="status">No invoices on this account.</div>
+            <div id="invoicesList"></div>
+            <div id="paymentsSection" class="mt-4 d-none">
+              <h6 class="fw-semibold mb-2">Payments received</h6>
+              <div id="paymentsList" class="list-group list-group-flush border rounded"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="accountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalTitle">Account</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="modalError" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3">
+            <label class="form-label" for="acctName">Name</label>
+            <input id="acctName" class="form-control" type="text" autocomplete="off" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="acctPhone">Phone (optional)</label>
+            <input id="acctPhone" class="form-control" type="text" autocomplete="off" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="acctEmail">Email (optional)</label>
+            <input id="acctEmail" class="form-control" type="email" autocomplete="off" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="acctNotes">Notes (optional)</label>
+            <textarea id="acctNotes" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="acctActive" checked />
+            <label class="form-check-label" for="acctActive">Active</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="saveBtn" type="button" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const addBtn = document.getElementById("addBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const errorBox = document.getElementById("errorBox");
+    const successBox = document.getElementById("successBox");
+    const emptyState = document.getElementById("emptyState");
+    const tableWrap = document.getElementById("tableWrap");
+    const tbody = document.getElementById("tbody");
+    const accountModalEl = document.getElementById("accountModal");
+    const accountModal = new bootstrap.Modal(accountModalEl);
+    const modalTitle = document.getElementById("modalTitle");
+    const modalError = document.getElementById("modalError");
+    const acctName = document.getElementById("acctName");
+    const acctPhone = document.getElementById("acctPhone");
+    const acctEmail = document.getElementById("acctEmail");
+    const acctNotes = document.getElementById("acctNotes");
+    const acctActive = document.getElementById("acctActive");
+    const saveBtn = document.getElementById("saveBtn");
+
+    let accounts = [];
+    let editingId = null;
+    let currencyPrefix = "R";
+    const settleModalEl = document.getElementById("settleModal");
+    const settleModal = new bootstrap.Modal(settleModalEl);
+    const settleModalTitle = document.getElementById("settleModalTitle");
+    const settleModalError = document.getElementById("settleModalError");
+    const settleBalanceEl = document.getElementById("settleBalance");
+    const settleBalancePrefix = document.getElementById("settleBalancePrefix");
+    const settleAmountPrefix = document.getElementById("settleAmountPrefix");
+    const settleAmountEl = document.getElementById("settleAmount");
+    const settleNoteEl = document.getElementById("settleNote");
+    const settleFullBtn = document.getElementById("settleFullBtn");
+    const settleSaveBtn = document.getElementById("settleSaveBtn");
+    let settlingAccount = null;
+    const invoicesModalEl = document.getElementById("invoicesModal");
+    const invoicesModal = new bootstrap.Modal(invoicesModalEl);
+    const invoicesModalTitle = document.getElementById("invoicesModalTitle");
+    const invoicesModalError = document.getElementById("invoicesModalError");
+    const invoicesLoading = document.getElementById("invoicesLoading");
+    const invoicesContent = document.getElementById("invoicesContent");
+    const invoicesBalancePrefix = document.getElementById("invoicesBalancePrefix");
+    const invoicesBalanceEl = document.getElementById("invoicesBalance");
+    const invoicesTotalChargesEl = document.getElementById("invoicesTotalCharges");
+    const invoicesTotalPaymentsEl = document.getElementById("invoicesTotalPayments");
+    const invoicesEmpty = document.getElementById("invoicesEmpty");
+    const invoicesList = document.getElementById("invoicesList");
+    const paymentsSection = document.getElementById("paymentsSection");
+    const paymentsList = document.getElementById("paymentsList");
+
+    function formatDateTime(iso) {
+      if (!iso) return "—";
+      try {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return String(iso);
+        return d.toLocaleString();
+      } catch (e) {
+        return String(iso);
+      }
+    }
+
+    function setInvoicesModalError(message) {
+      invoicesModalError.textContent = message;
+      invoicesModalError.classList.remove("d-none");
+    }
+    function clearInvoicesModalError() {
+      invoicesModalError.textContent = "";
+      invoicesModalError.classList.add("d-none");
+    }
+
+    function renderOutstanding(data) {
+      invoicesBalancePrefix.textContent = currencyPrefix;
+      invoicesBalanceEl.textContent = formatMoney(data.balance);
+      invoicesTotalChargesEl.textContent = `${currencyPrefix}${data.total_charges || "0.00"}`;
+      invoicesTotalPaymentsEl.textContent = `${currencyPrefix}${data.total_payments || "0.00"}`;
+
+      const invoices = Array.isArray(data.invoices) ? data.invoices : [];
+      invoicesEmpty.classList.toggle("d-none", invoices.length > 0);
+      invoicesList.innerHTML = "";
+
+      for (const inv of invoices) {
+        const tableLabel =
+          inv.table_number != null ? ` · Table #${escapeHtml(String(inv.table_number))}` : "";
+        const invNo = inv.invoice_number != null ? `Invoice #${inv.invoice_number}` : "Charge";
+        const items = Array.isArray(inv.items) ? inv.items : [];
+        const rows = items
+          .map(
+            (it) => `<tr>
+            <td>${escapeHtml(it.name || "Item")}</td>
+            <td class="text-center">${escapeHtml(String(it.quantity ?? ""))}</td>
+            <td class="text-end">${currencyPrefix}${escapeHtml(it.price_at_time || "0.00")}</td>
+            <td class="text-end fw-semibold">${currencyPrefix}${escapeHtml(it.line_total || "0.00")}</td>
+          </tr>`
+          )
+          .join("");
+        const itemsHtml = items.length
+          ? `<div class="card-body p-0"><div class="table-responsive"><table class="table table-sm mb-0">
+            <thead><tr><th>Item</th><th class="text-center">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead>
+            <tbody>${rows}</tbody></table></div></div>`
+          : `<div class="card-body py-2 small text-body-secondary">No line items recorded.</div>`;
+
+        const card = document.createElement("div");
+        card.className = "card mb-3";
+        card.innerHTML = `<div class="card-header d-flex justify-content-between align-items-start gap-2 py-2">
+            <div><div class="fw-semibold">${escapeHtml(invNo)}${tableLabel}</div>
+              <div class="text-body-secondary small">${escapeHtml(formatDateTime(inv.charged_at || inv.sale_date))}</div></div>
+            <div class="fw-semibold">${currencyPrefix}${escapeHtml(inv.amount || "0.00")}</div></div>${itemsHtml}`;
+        card.innerHTML = card.innerHTML.replace(/div/g, "div");
+        invoicesList.appendChild(card);
+      }
+
+      const payments = Array.isArray(data.payments) ? data.payments : [];
+      paymentsSection.classList.toggle("d-none", payments.length === 0);
+      paymentsList.innerHTML = "";
+      for (const p of payments) {
+        const li = document.createElement("div");
+        li.className = "list-group-item d-flex justify-content-between gap-2";
+        li.innerHTML = `<div><div class="fw-semibold">${currencyPrefix}${escapeHtml(p.amount || "0.00")}</div>
+            <div class="text-body-secondary small">${escapeHtml(formatDateTime(p.paid_at))}${p.note ? ` · ${escapeHtml(p.note)}` : ""}</div></div>`;
+        li.innerHTML = li.innerHTML.replace(/div/g, "div");
+        paymentsList.appendChild(li);
+      }
+    }
+
+    async function openInvoices(a) {
+      clearInvoicesModalError();
+      invoicesModalTitle.textContent = `Outstanding invoices — ${a.name || "Account"}`;
+      invoicesLoading.classList.remove("d-none");
+      invoicesContent.classList.add("d-none");
+      invoicesModal.show();
+
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      try {
+        const res = await fetch(`/api/accounts/${a.id}/outstanding`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          setInvoicesModalError(data.message || "Failed to load invoices.");
+          return;
+        }
+        renderOutstanding(data);
+        invoicesContent.classList.remove("d-none");
+      } catch (e) {
+        setInvoicesModalError("Network error. Please try again.");
+      } finally {
+        invoicesLoading.classList.add("d-none");
+      }
+    }
+
+
+    function moneyToNumber(value) {
+      const n = Number.parseFloat(String(value || "0").replace(",", "."));
+      return Number.isFinite(n) ? n : 0;
+    }
+    function formatMoney(n) {
+      return moneyToNumber(n).toFixed(2);
+    }
+    function setSettleModalError(message) {
+      settleModalError.textContent = message;
+      settleModalError.classList.remove("d-none");
+    }
+    function clearSettleModalError() {
+      settleModalError.textContent = "";
+      settleModalError.classList.add("d-none");
+    }
+
+    function openSettle(a) {
+      settlingAccount = a;
+      clearSettleModalError();
+      settleModalTitle.textContent = `Settle — ${a.name || "Account"}`;
+      settleBalancePrefix.textContent = currencyPrefix;
+      settleAmountPrefix.textContent = currencyPrefix;
+      settleBalanceEl.textContent = formatMoney(a.balance);
+      settleAmountEl.value = formatMoney(a.balance);
+      settleNoteEl.value = "";
+      settleModal.show();
+      window.setTimeout(() => settleAmountEl.focus(), 150);
+    }
+
+    async function saveSettlement() {
+      clearSettleModalError();
+      const token = requireTokenOrRedirect();
+      if (!token || !settlingAccount) return;
+      const amount = moneyToNumber(settleAmountEl.value);
+      if (amount <= 0) {
+        setSettleModalError("Enter a payment amount greater than zero.");
+        return;
+      }
+      const owing = moneyToNumber(settlingAccount.balance);
+      if (amount > owing + 1e-9) {
+        setSettleModalError(`Payment cannot exceed balance owing (${currencyPrefix}${formatMoney(owing)}).`);
+        return;
+      }
+      settleSaveBtn.disabled = true;
+      settleSaveBtn.textContent = "Saving…";
+      try {
+        const res = await fetch(`/api/accounts/${settlingAccount.id}/settle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            amount: formatMoney(amount),
+            note: (settleNoteEl.value || "").trim() || null,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          setSettleModalError(data.message || data.error || "Could not record payment.");
+          return;
+        }
+        settleModal.hide();
+        showSuccess(
+          `Payment of ${currencyPrefix}${formatMoney(amount)} recorded. New balance: ${currencyPrefix}${data.balance || "0.00"}.`
+        );
+        settlingAccount = null;
+        await loadAccounts();
+      } catch (e) {
+        setSettleModalError("Network error. Please try again.");
+      } finally {
+        settleSaveBtn.disabled = false;
+        settleSaveBtn.textContent = "Record payment";
+      }
+    }
+
+
+    function getToken() {
+      return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+    }
+    function requireTokenOrRedirect() {
+      const token = getToken();
+      if (!token) window.location.assign("/login");
+      return token;
+    }
+    function isManager() {
+      return (localStorage.getItem("staff_role") || "").trim().toLowerCase() === "manager";
+    }
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("d-none");
+    }
+    function clearError() {
+      errorBox.textContent = "";
+      errorBox.classList.add("d-none");
+    }
+    function showSuccess(message) {
+      successBox.textContent = message;
+      successBox.classList.remove("d-none");
+      window.setTimeout(() => successBox.classList.add("d-none"), 2500);
+    }
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+    function setModalError(message) {
+      modalError.textContent = message;
+      modalError.classList.remove("d-none");
+    }
+    function clearModalError() {
+      modalError.textContent = "";
+      modalError.classList.add("d-none");
+    }
+
+    function openAdd() {
+      editingId = null;
+      modalTitle.textContent = "Add account";
+      acctName.value = "";
+      acctPhone.value = "";
+      acctEmail.value = "";
+      acctNotes.value = "";
+      acctActive.checked = true;
+      clearModalError();
+      accountModal.show();
+    }
+
+    function openEdit(a) {
+      editingId = a.id;
+      modalTitle.textContent = "Edit account";
+      acctName.value = a.name || "";
+      acctPhone.value = a.phone || "";
+      acctEmail.value = a.email || "";
+      acctNotes.value = a.notes || "";
+      acctActive.checked = !!a.active;
+      clearModalError();
+      accountModal.show();
+    }
+
+    function render() {
+      const has = Array.isArray(accounts) && accounts.length > 0;
+      emptyState.classList.toggle("d-none", has);
+      tableWrap.classList.toggle("d-none", !has);
+      tbody.innerHTML = "";
+      if (!has) return;
+      for (const a of accounts) {
+        const contact = [a.phone, a.email].filter(Boolean).join(" • ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="fw-semibold">${escapeHtml(a.name || "")}${a.active ? "" : ' <span class="badge text-bg-secondary">Inactive</span>'}</td>
+          <td class="text-body-secondary small">${escapeHtml(contact || "—")}</td>
+          <td class="text-end fw-semibold">${currencyPrefix}${escapeHtml(a.balance || "0.00")}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm flex-wrap" role="group">
+              <button class="btn btn-outline-secondary" data-action="invoices" data-id="${a.id}">Outstanding</button>
+              <button class="btn btn-success" data-action="settle" data-id="${a.id}" ${moneyToNumber(a.balance) > 0 ? "" : "disabled"}>Settle</button>
+              <button class="btn btn-outline-primary" data-action="edit" data-id="${a.id}">Edit</button>
+            </div>
+          </td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadAccounts() {
+      clearError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const activeOnly = "0";
+      try {
+        const res = await fetch(`/api/accounts?active=${activeOnly}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("staff_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok || !Array.isArray(data)) {
+          showError("Failed to load accounts.");
+          accounts = [];
+          render();
+          return;
+        }
+        accounts = data;
+        render();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      }
+    }
+
+    async function saveAccount() {
+      clearModalError();
+      if (!isManager()) {
+        setModalError("Only managers can create or edit accounts.");
+        return;
+      }
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const name = (acctName.value || "").trim();
+      if (!name) {
+        setModalError("Name is required.");
+        return;
+      }
+      const body = {
+        name,
+        phone: (acctPhone.value || "").trim() || null,
+        email: (acctEmail.value || "").trim() || null,
+        notes: (acctNotes.value || "").trim() || null,
+        active: acctActive.checked,
+      };
+      const url = editingId ? `/api/accounts/${editingId}` : "/api/accounts";
+      const method = editingId ? "PUT" : "POST";
+      saveBtn.disabled = true;
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          setModalError(data.message || data.error || "Save failed.");
+          return;
+        }
+        accountModal.hide();
+        showSuccess(editingId ? "Account updated." : "Account created.");
+        await loadAccounts();
+      } catch (e) {
+        setModalError("Network error. Please try again.");
+      } finally {
+        saveBtn.disabled = false;
+      }
+    }
+
+    tbody.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("[data-action]") : null;
+      if (!btn) return;
+      const id = Number.parseInt(btn.getAttribute("data-id"), 10);
+      const a = accounts.find((x) => x.id === id);
+      if (!a) return;
+      const action = btn.getAttribute("data-action");
+      if (action === "invoices") openInvoices(a);
+      else if (action === "settle") openSettle(a);
+      else if (action === "edit") openEdit(a);
+    });
+
+    addBtn.addEventListener("click", () => {
+      if (!isManager()) {
+        showError("Only managers can create accounts. Log in as manager staff.");
+        return;
+      }
+      openAdd();
+    });
+    reloadBtn.addEventListener("click", loadAccounts);
+    settleFullBtn.addEventListener("click", () => {
+      if (settlingAccount) settleAmountEl.value = formatMoney(settlingAccount.balance);
+    });
+    settleSaveBtn.addEventListener("click", saveSettlement);
+    saveBtn.addEventListener("click", saveAccount);
+    requireTokenOrRedirect();
+    loadAccounts();
+  </script>
+{% endblock %}

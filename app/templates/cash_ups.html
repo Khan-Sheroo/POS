@@ -1,0 +1,1004 @@
+{% extends "base.html" %}
+
+{% block title %}Cash Ups • POS System{% endblock %}
+
+{% block head %}
+  <style>
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #staffCashupPrintArea,
+      #staffCashupPrintArea * {
+        visibility: visible;
+      }
+      #staffCashupPrintArea {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 12px;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+    #staffCashupPrintArea {
+      font-size: 12px;
+    }
+    #staffCashupPrintArea .print-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="no-print">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h1 class="h4 mb-0">Cash Ups</h1>
+      <button id="reloadBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload</button>
+    </div>
+  </div>
+
+  <div class="no-print">
+    <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+    <div id="successBox" class="alert alert-success d-none" role="alert"></div>
+  </div>
+
+  <!-- Staff cash ups -->
+  <div class="card mb-3 no-print">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <div class="fw-semibold">Staff cash ups</div>
+          <div class="text-body-secondary small">Print each staff member's cash up before the master cash up.</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-end">
+          <div id="staffSelectWrap">
+            <label class="form-label small mb-1" for="staffSelect">Staff</label>
+            <select id="staffSelect" class="form-select form-select-sm" style="min-width: 180px"></select>
+          </div>
+          <button id="printStaffCashupBtn" class="btn btn-outline-primary btn-sm" type="button" disabled>Print staff cash up</button>
+          <button id="completeStaffCashupBtn" class="btn btn-success btn-sm" type="button" disabled>Cash up</button>
+        </div>
+      </div>
+
+      <div id="staffCompletionList" class="mb-3"></div>
+      <div id="staffCompletedBadge" class="alert alert-success py-2 small d-none mb-2">This staff member has been cashed up.</div>
+      <div id="staffOpenTablesAlert" class="alert alert-danger py-2 small d-none mb-2" role="alert"></div>
+
+      <div id="staffCashupEmpty" class="text-body-secondary small">Select a staff member to view today's cash up.</div>
+      <div id="staffCashupSummary" class="d-none">
+        <div class="row g-2 mb-3">
+          <div class="col-6 col-md-4">
+            <div class="text-body-secondary small">Staff</div>
+            <div id="staffNameEl" class="fw-semibold">—</div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="text-body-secondary small">Date</div>
+            <div id="staffDateEl" class="fw-semibold">—</div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="text-body-secondary small">Turnover</div>
+            <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="staffTurnover">0.00</span></div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="text-body-secondary small">Cash payments</div>
+            <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="staffCashPayments">0.00</span></div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="text-body-secondary small">Credit payments</div>
+            <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="staffCreditPayments">0.00</span></div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="text-body-secondary small">Total tips</div>
+            <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="staffTotalTips">0.00</span></div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="text-body-secondary small">Total cash due to restaurant</div>
+            <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="staffCashDue">0.00</span></div>
+          </div>
+        </div>
+
+        <div class="fw-semibold mb-2">Tables closed</div>
+        <div id="staffTablesEmpty" class="text-body-secondary small d-none">No tables closed today.</div>
+        <div id="staffTablesWrap" class="table-responsive d-none">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Date / time</th>
+                <th>Invoice</th>
+                <th>Table</th>
+                <th class="text-end">Bill</th>
+                <th class="text-end">Cash</th>
+                <th class="text-end">Credit</th>
+                <th class="text-end">Tip</th>
+              </tr>
+            </thead>
+            <tbody id="staffTablesTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="staffCashupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="staffCashupModalTitle">Cash up</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <div class="text-body-secondary small">Expected cash</div>
+              <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="modalExpectedCash">0.00</span></div>
+            </div>
+            <div class="col-6">
+              <div class="text-body-secondary small">Expected credit</div>
+              <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="modalExpectedCredit">0.00</span></div>
+            </div>
+          </div>
+          <label class="form-label" for="modalActualCash">Actual cash taken</label>
+          <input id="modalActualCash" class="form-control mb-2" type="text" inputmode="decimal" placeholder="0.00" />
+          <label class="form-label" for="modalActualCredit">Actual credit taken</label>
+          <input id="modalActualCredit" class="form-control mb-3" type="text" inputmode="decimal" placeholder="0.00" />
+          <div id="staffCashupBalanceStatus" class="alert py-2 small mb-0 d-none" role="status"></div>
+          <div id="staffCashupModalError" class="alert alert-danger py-2 small mt-2 d-none mb-0"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" id="staffCashupModalOkBtn">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="staffCashupPrintArea" class="d-none" aria-hidden="true"></div>
+
+  <hr class="my-4 no-print" />
+
+  <h2 class="h5 mb-3 no-print">Master cash up</h2>
+  <div id="masterBlockedAlert" class="alert alert-warning no-print d-none" role="alert"></div>
+  <div id="masterOpenTablesAlert" class="alert alert-danger no-print d-none" role="alert"></div>
+  <div id="masterSubmittedAlert" class="alert alert-info no-print d-none" role="alert">
+    Master cash up submitted for this trading day. You can now run day end when all other checks pass.
+  </div>
+
+  <div class="row g-3 no-print">
+    <div class="col-12 col-lg-5">
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">Trading day</div>
+              <div class="text-body-secondary small" id="masterDateEl">—</div>
+            </div>
+            <div class="text-body-secondary small" id="lastUpdated">—</div>
+          </div>
+
+          <hr class="my-3" />
+
+          <div class="row g-2">
+            <div class="col-6">
+              <div class="text-body-secondary small">Total turnover</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="masterTurnover">0.00</span></div>
+            </div>
+            <div class="col-6">
+              <div class="text-body-secondary small">Total cash payments</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="masterCashPayments">0.00</span></div>
+            </div>
+            <div class="col-6">
+              <div class="text-body-secondary small">Total credit payments</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="masterCreditPayments">0.00</span></div>
+            </div>
+            <div class="col-6">
+              <div class="text-body-secondary small">Total on account</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="masterAccountPayments">0.00</span></div>
+            </div>
+
+            <div class="col-6">
+              <div class="text-body-secondary small">Total tips</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="masterTotalTips">0.00</span></div>
+            </div>
+            <div class="col-12">
+              <div class="text-body-secondary small">Total cash due to restaurant</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="expectedCash">0.00</span></div>
+            </div>
+          </div>
+
+          <hr class="my-3" />
+
+          <label class="form-label fw-semibold mb-1" for="actualCash">Actual cash counted</label>
+          <input
+            id="actualCash"
+            class="form-control"
+            type="text"
+            inputmode="decimal"
+            pattern="[0-9]*[.,]?[0-9]*"
+            step="0.01"
+            min="0"
+            placeholder="0.00"
+          />
+          <div class="d-flex justify-content-between align-items-center mt-2">
+            <div class="text-body-secondary">Difference</div>
+            <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="difference">0.00</span></div>
+          </div>
+
+          <button id="submitBtn" class="btn btn-primary w-100 mt-3" type="button" disabled>Submit master cash up</button>
+          <button id="dayEndBtn" class="btn btn-dark w-100 mt-2" type="button" disabled>Day end</button>
+          <div id="dayEndBlockers" class="alert alert-secondary py-2 small mt-2 mb-0 d-none" role="status"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="fw-semibold mb-2">Items sold by category</div>
+          <div id="masterCategoriesEmpty" class="text-body-secondary small">No items sold today.</div>
+          <div id="masterCategoriesWrap" class="d-none"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="fw-semibold mb-2">Past master cash ups</div>
+          <div id="listEmpty" class="text-body-secondary small">No cash ups yet.</div>
+          <div id="listWrap" class="table-responsive d-none">
+            <table class="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Cash</th>
+                  <th class="text-end">Card</th>
+                  <th class="text-end">Actual</th>
+                  <th class="text-end">Diff</th>
+                </tr>
+              </thead>
+              <tbody id="cashupsTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const reloadBtn = document.getElementById("reloadBtn");
+    const errorBox = document.getElementById("errorBox");
+    const successBox = document.getElementById("successBox");
+    const lastUpdatedEl = document.getElementById("lastUpdated");
+    const staffSelect = document.getElementById("staffSelect");
+    const printStaffCashupBtn = document.getElementById("printStaffCashupBtn");
+    const completeStaffCashupBtn = document.getElementById("completeStaffCashupBtn");
+    const staffCashupModalEl = document.getElementById("staffCashupModal");
+    const staffCashupModal = staffCashupModalEl ? new bootstrap.Modal(staffCashupModalEl) : null;
+    const staffCashupModalTitle = document.getElementById("staffCashupModalTitle");
+    const modalExpectedCash = document.getElementById("modalExpectedCash");
+    const modalExpectedCredit = document.getElementById("modalExpectedCredit");
+    const modalActualCash = document.getElementById("modalActualCash");
+    const modalActualCredit = document.getElementById("modalActualCredit");
+    const staffCashupBalanceStatus = document.getElementById("staffCashupBalanceStatus");
+    const staffCashupModalError = document.getElementById("staffCashupModalError");
+    const staffCashupModalOkBtn = document.getElementById("staffCashupModalOkBtn");
+    const staffCompletionList = document.getElementById("staffCompletionList");
+    const staffCompletedBadge = document.getElementById("staffCompletedBadge");
+    const staffOpenTablesAlert = document.getElementById("staffOpenTablesAlert");
+    const masterBlockedAlert = document.getElementById("masterBlockedAlert");
+    const masterOpenTablesAlert = document.getElementById("masterOpenTablesAlert");
+    const masterSubmittedAlert = document.getElementById("masterSubmittedAlert");
+    const masterDateEl = document.getElementById("masterDateEl");
+    const masterTurnover = document.getElementById("masterTurnover");
+    const masterCashPayments = document.getElementById("masterCashPayments");
+    const masterCreditPayments = document.getElementById("masterCreditPayments");
+    const masterTotalTips = document.getElementById("masterTotalTips");
+    const masterAccountPayments = document.getElementById("masterAccountPayments");
+    const masterCategoriesEmpty = document.getElementById("masterCategoriesEmpty");
+    const masterCategoriesWrap = document.getElementById("masterCategoriesWrap");
+    const staffCashupEmpty = document.getElementById("staffCashupEmpty");
+    const staffCashupSummary = document.getElementById("staffCashupSummary");
+    const staffNameEl = document.getElementById("staffNameEl");
+    const staffDateEl = document.getElementById("staffDateEl");
+    const staffTurnover = document.getElementById("staffTurnover");
+    const staffCashPayments = document.getElementById("staffCashPayments");
+    const staffCreditPayments = document.getElementById("staffCreditPayments");
+    const staffTotalTips = document.getElementById("staffTotalTips");
+    const staffCashDue = document.getElementById("staffCashDue");
+    const staffTablesEmpty = document.getElementById("staffTablesEmpty");
+    const staffTablesWrap = document.getElementById("staffTablesWrap");
+    const staffTablesTbody = document.getElementById("staffTablesTbody");
+    const staffCashupPrintArea = document.getElementById("staffCashupPrintArea");
+    const expectedCashEl = document.getElementById("expectedCash");
+    const actualCashEl = document.getElementById("actualCash");
+    const differenceEl = document.getElementById("difference");
+    const submitBtn = document.getElementById("submitBtn");
+    const dayEndBtn = document.getElementById("dayEndBtn");
+    const dayEndBlockers = document.getElementById("dayEndBlockers");
+    const listEmpty = document.getElementById("listEmpty");
+    const listWrap = document.getElementById("listWrap");
+    const cashupsTbody = document.getElementById("cashupsTbody");
+    let expectedCash = 0;
+    let currentStaffReport = null;
+    let resolvedStaffId = null;
+    let masterCashupData = null;
+    let canSubmitMaster = false;
+
+    function getToken() {
+      return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+    }
+    function requireTokenOrRedirect() {
+      const token = getToken();
+      if (!token) window.location.assign("/login");
+      return token;
+    }
+    function isManager() {
+      return (localStorage.getItem("staff_role") || "").trim().toLowerCase() === "manager";
+    }
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("d-none");
+    }
+    function clearError() {
+      errorBox.textContent = "";
+      errorBox.classList.add("d-none");
+    }
+    function showSuccess(message) {
+      successBox.textContent = message;
+      successBox.classList.remove("d-none");
+      window.setTimeout(() => successBox.classList.add("d-none"), 2500);
+    }
+    function moneyToNumber(value) {
+      if (value == null) return 0;
+      const n = Number.parseFloat(String(value));
+      return Number.isFinite(n) ? n : 0;
+    }
+    function formatMoney(n) {
+      return Number(n || 0).toFixed(2);
+    }
+    function getCurrencyPrefix() {
+      const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+      if (c === "USD") return "$";
+      if (c === "GBP") return "£";
+      return "R";
+    }
+    function applyCurrencyPrefix() {
+      document.querySelectorAll(".currencyPrefix").forEach((el) => (el.textContent = getCurrencyPrefix()));
+    }
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+    function formatDateTime(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+    }
+
+    async function resolveCurrentStaffId() {
+      const stored = localStorage.getItem("staff_id");
+      if (stored) {
+        const n = Number.parseInt(stored, 10);
+        if (Number.isFinite(n)) return n;
+      }
+      const token = localStorage.getItem("staff_token");
+      if (!token) return null;
+      try {
+        const res = await fetch("/api/staff/me", { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data && data.id != null) {
+          localStorage.setItem("staff_id", String(data.id));
+          if (data.name) localStorage.setItem("staff_name", data.name);
+          if (data.role) localStorage.setItem("staff_role", data.role);
+          return data.id;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    function formatVenueOpenTablesMessage(data) {
+      const open = data && Array.isArray(data.open_tables) ? data.open_tables : [];
+      if (!open.length) return "";
+      const nums = open
+        .map((t) => t.table_number)
+        .filter((n) => n != null)
+        .sort((a, b) => a - b);
+      const list = nums.length ? nums.map((n) => `#${n}`).join(", ") : `${open.length} table(s)`;
+      return `Close all open tables before master cash up: ${list}.`;
+    }
+
+    function updateDifferenceUI() {
+      const actual = moneyToNumber(actualCashEl.value);
+      differenceEl.textContent = formatMoney(actual - expectedCash);
+      const validCash = Number.isFinite(actual) && actual >= 0;
+      const staffReady = !!(
+        masterCashupData &&
+        masterCashupData.staff_status &&
+        masterCashupData.staff_status.all_complete
+      );
+      const alreadySubmitted = !!(masterCashupData && masterCashupData.master_already_submitted);
+      const hasOpenTables = !!(masterCashupData && masterCashupData.has_open_tables);
+      canSubmitMaster = !!(masterCashupData && masterCashupData.can_submit_master);
+      submitBtn.disabled = !validCash || !canSubmitMaster;
+      const pending = masterCashupData && masterCashupData.staff_status && masterCashupData.staff_status.pending_staff;
+      if (!staffReady && !alreadySubmitted && Array.isArray(pending) && pending.length) {
+        masterBlockedAlert.textContent = `Master cash up is locked until staff cash ups are done. Pending: ${pending.join(", ")}.`;
+        masterBlockedAlert.classList.remove("d-none");
+      } else if (!staffReady && !alreadySubmitted) {
+        masterBlockedAlert.textContent =
+          "Master cash up is locked until every staff member (except managers) has completed their cash up.";
+        masterBlockedAlert.classList.remove("d-none");
+      } else {
+        masterBlockedAlert.classList.add("d-none");
+      }
+      const openMsg = formatVenueOpenTablesMessage(masterCashupData);
+      if (hasOpenTables && !alreadySubmitted && openMsg) {
+        masterOpenTablesAlert.textContent = openMsg;
+        masterOpenTablesAlert.classList.remove("d-none");
+      } else {
+        masterOpenTablesAlert.textContent = "";
+        masterOpenTablesAlert.classList.add("d-none");
+      }
+      masterSubmittedAlert.classList.toggle("d-none", !alreadySubmitted);
+      actualCashEl.disabled = alreadySubmitted;
+      submitBtn.textContent = alreadySubmitted ? "Master cash up submitted" : "Submit master cash up";
+    }
+
+    function renderStaffCompletionList(status) {
+      const rows = status && Array.isArray(status.staff) ? status.staff : [];
+      if (!rows.length) {
+        staffCompletionList.innerHTML = "";
+        return;
+      }
+      staffCompletionList.innerHTML = `
+        <div class="text-body-secondary small mb-1">Staff completion (required before master cash up)</div>
+        <div class="d-flex flex-wrap gap-2">${rows
+          .map((r) => {
+            const done = !!r.completed;
+            const exempt = !!r.exempt_from_master_requirement;
+            const cls = done ? "bg-success-subtle border-success" : "bg-warning-subtle border-warning";
+            const icon = done ? "&#10003;" : "…";
+            const suffix = exempt ? " (manager)" : "";
+            return `<span class="badge ${cls} border">${icon} ${escapeHtml(r.staff.name)}${suffix}</span>`;
+          })
+          .join("")}</div>`;
+    }
+
+    function renderMasterCategories(categories) {
+      const cats = Array.isArray(categories) ? categories : [];
+      masterCategoriesEmpty.classList.toggle("d-none", cats.length > 0);
+      masterCategoriesWrap.classList.toggle("d-none", cats.length === 0);
+      masterCategoriesWrap.innerHTML = "";
+      const cur = getCurrencyPrefix();
+      for (const cat of cats) {
+        const block = document.createElement("div");
+        block.className = "mb-3";
+        const items = Array.isArray(cat.items) ? cat.items : [];
+        const itemRows = items
+          .map(
+            (it) => `<tr>
+              <td>${escapeHtml(it.name || "Item")}</td>
+              <td class="text-end">${it.quantity != null ? escapeHtml(String(it.quantity)) : "0"}</td>
+              <td class="text-end">${cur}${escapeHtml(it.line_total || "0.00")}</td>
+            </tr>`
+          )
+          .join("");
+        block.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div class="fw-semibold">${escapeHtml(cat.category_name || "Uncategorized")}</div>
+            <div class="fw-semibold">${cur}${escapeHtml(cat.category_total || "0.00")}</div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Total</th></tr></thead>
+              <tbody>${itemRows || `<tr><td colspan="3" class="text-body-secondary small">No items</td></tr>`}</tbody>
+            </table>
+          </div>`;
+        masterCategoriesWrap.appendChild(block);
+      }
+    }
+
+    function renderMasterCashup(data) {
+      masterCashupData = data;
+      canSubmitMaster = !!(data && data.can_submit_master);
+      const s = (data && data.summary) || {};
+      masterDateEl.textContent = (data && data.date) || "—";
+      masterTurnover.textContent = s.turnover || "0.00";
+      masterCashPayments.textContent = s.cash_payments || "0.00";
+      masterCreditPayments.textContent = s.credit_payments || "0.00";
+      masterAccountPayments.textContent = s.account_payments || "0.00";
+      masterTotalTips.textContent = s.total_tips || "0.00";
+      if (data && data.master_already_submitted && data.master_cashup) {
+        expectedCash = moneyToNumber(data.master_cashup.expected_cash);
+        expectedCashEl.textContent = formatMoney(expectedCash);
+        actualCashEl.value = data.master_cashup.actual_cash || "";
+        differenceEl.textContent = data.master_cashup.difference || "0.00";
+      } else {
+        expectedCash = moneyToNumber(s.cash_due_to_restaurant);
+        expectedCashEl.textContent = formatMoney(expectedCash);
+        if (!actualCashEl.value.trim()) actualCashEl.value = "";
+      }
+      lastUpdatedEl.textContent = new Date().toLocaleString();
+      renderStaffCompletionList(data && data.staff_status);
+      renderMasterCategories(data && data.categories);
+      updateDifferenceUI();
+      updateDayEndUI();
+    }
+
+    function renderStaffReport(report) {
+      currentStaffReport = report;
+      const hasStaff = !!(report && report.staff);
+      staffCashupEmpty.classList.toggle("d-none", hasStaff);
+      staffCashupSummary.classList.toggle("d-none", !hasStaff);
+      printStaffCashupBtn.disabled = !hasStaff;
+      if (!hasStaff) {
+        updateCashUpStaffButton(null);
+        staffOpenTablesAlert.classList.add("d-none");
+        staffOpenTablesAlert.textContent = "";
+      }
+      const completed = !!(report && report.completed);
+      updateCashUpStaffButton(report);
+      const balanced = !!(report && report.completion && report.completion.is_balanced);
+      if (completed) {
+        staffCompletedBadge.textContent = balanced ? "Cashed up — balanced." : "Cashed up — not balanced.";
+      }
+      staffCompletedBadge.classList.toggle("d-none", !completed);
+      staffCompletedBadge.classList.toggle("alert-success", !completed || balanced);
+      staffCompletedBadge.classList.toggle("alert-warning", completed && !balanced);
+      const openMsg = formatOpenTablesMessage(report);
+      if (openMsg) {
+        staffOpenTablesAlert.textContent = openMsg;
+        staffOpenTablesAlert.classList.remove("d-none");
+      } else {
+        staffOpenTablesAlert.textContent = "";
+        staffOpenTablesAlert.classList.add("d-none");
+      }
+      if (!hasStaff) return;
+      const cur = getCurrencyPrefix();
+      const s = report.summary || {};
+      staffNameEl.textContent = report.staff.name || "—";
+      staffDateEl.textContent = report.date || "—";
+      staffTurnover.textContent = s.turnover || "0.00";
+      staffCashPayments.textContent = s.cash_payments || "0.00";
+      staffCreditPayments.textContent = s.credit_payments || "0.00";
+      staffTotalTips.textContent = s.total_tips || "0.00";
+      staffCashDue.textContent = s.cash_due_to_restaurant || "0.00";
+      const tables = Array.isArray(report.tables) ? report.tables : [];
+      staffTablesEmpty.classList.toggle("d-none", tables.length > 0);
+      staffTablesWrap.classList.toggle("d-none", tables.length === 0);
+      staffTablesTbody.innerHTML = "";
+      for (const row of tables) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="text-body-secondary small">${escapeHtml(formatDateTime(row.closed_at))}</td>
+          <td>${row.invoice_number != null ? escapeHtml(String(row.invoice_number)) : "—"}</td>
+          <td>${row.table_number != null ? escapeHtml(String(row.table_number)) : "—"}</td>
+          <td class="text-end">${cur}${escapeHtml(row.bill_total || "0.00")}</td>
+          <td class="text-end">${row.cash_amount != null ? `${cur}${escapeHtml(row.cash_amount)}` : "—"}</td>
+          <td class="text-end">${row.card_amount != null ? `${cur}${escapeHtml(row.card_amount)}` : "—"}</td>
+          <td class="text-end">${cur}${escapeHtml(row.tip || "0.00")}</td>`;
+        staffTablesTbody.appendChild(tr);
+      }
+      buildStaffPrintHtml(report, cur);
+    }
+
+    function buildStaffPrintHtml(report, cur) {
+      const s = report.summary || {};
+      const tables = Array.isArray(report.tables) ? report.tables : [];
+      const tableRows = tables
+        .map(
+          (row) => `<tr>
+          <td>${escapeHtml(formatDateTime(row.closed_at))}</td>
+          <td>${row.invoice_number != null ? escapeHtml(String(row.invoice_number)) : "—"}</td>
+          <td>${row.table_number != null ? escapeHtml(String(row.table_number)) : "—"}</td>
+          <td style="text-align:right">${cur}${escapeHtml(row.bill_total || "0.00")}</td>
+          <td style="text-align:right">${row.cash_amount != null ? `${cur}${escapeHtml(row.cash_amount)}` : "—"}</td>
+          <td style="text-align:right">${row.card_amount != null ? `${cur}${escapeHtml(row.card_amount)}` : "—"}</td>
+          <td style="text-align:right">${cur}${escapeHtml(row.tip || "0.00")}</td>
+        </tr>`
+        )
+        .join("");
+      staffCashupPrintArea.innerHTML = `
+        <div class="print-title">Staff Cash Up</div>
+        <div style="margin-top:8px">
+          <div><strong>Staff:</strong> ${escapeHtml(report.staff.name || "—")}</div>
+          <div><strong>Date:</strong> ${escapeHtml(report.date || "—")}</div>
+        </div>
+        <hr style="margin:12px 0" />
+        <table style="width:100%;border-collapse:collapse"><tbody>
+          <tr><td>Staff turnover</td><td style="text-align:right;font-weight:600">${cur}${escapeHtml(s.turnover || "0.00")}</td></tr>
+          <tr><td>Staff cash payments</td><td style="text-align:right;font-weight:600">${cur}${escapeHtml(s.cash_payments || "0.00")}</td></tr>
+          <tr><td>Staff credit payments</td><td style="text-align:right;font-weight:600">${cur}${escapeHtml(s.credit_payments || "0.00")}</td></tr>
+          <tr><td>Total tips</td><td style="text-align:right;font-weight:600">${cur}${escapeHtml(s.total_tips || "0.00")}</td></tr>
+          <tr><td><strong>Total cash due to restaurant</strong></td><td style="text-align:right;font-weight:700">${cur}${escapeHtml(s.cash_due_to_restaurant || "0.00")}</td></tr>
+        </tbody></table>
+        <hr style="margin:12px 0" />
+        <div style="font-weight:700;margin-bottom:6px">Tables closed</div>
+        ${tables.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="border-bottom:1px solid #000">
+          <th style="text-align:left">Date / time</th><th style="text-align:left">Invoice</th><th style="text-align:left">Table</th>
+          <th style="text-align:right">Bill</th><th style="text-align:right">Cash</th><th style="text-align:right">Credit</th><th style="text-align:right">Tip</th>
+        </tr></thead><tbody>${tableRows}</tbody></table>` : "<div>No tables closed today.</div>"}
+        <div style="margin-top:16px;font-size:10px;color:#666">Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+      `;
+    }
+
+    function printStaffCashup() {
+      if (!currentStaffReport) return;
+      const w = window.open("", "_blank", "width=800,height=900");
+      if (!w) {
+        showError("Pop-up blocked. Allow pop-ups to print.");
+        return;
+      }
+      w.document.write(`<!doctype html><html><head><title>Staff Cash Up</title>
+        <style>body{font-family:system-ui,sans-serif;margin:16px;font-size:12px}table td,table th{padding:4px 6px}</style>
+        </head><body>${staffCashupPrintArea.innerHTML}</body></html>`);
+      w.document.close();
+      w.focus();
+      w.print();
+      w.close();
+    }
+
+    async function loadStaffList() {
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      if (!isManager()) resolvedStaffId = await resolveCurrentStaffId();
+      const res = await fetch("/api/cashups/staff", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => []);
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("staff_token");
+        window.location.assign("/login");
+        return;
+      }
+      if (!res.ok || !Array.isArray(data)) throw new Error("staff_cashups_failed");
+      staffSelect.innerHTML = "";
+      for (const row of data) {
+        const opt = document.createElement("option");
+        opt.value = String(row.staff.id);
+        const done = row.completed ? " \u2713" : "";
+        opt.textContent = `${row.staff.name}${done}`;
+        staffSelect.appendChild(opt);
+      }
+      if (!isManager() && resolvedStaffId) {
+        staffSelect.value = String(resolvedStaffId);
+        staffSelect.disabled = true;
+      } else {
+        staffSelect.disabled = data.length === 0;
+      }
+      if (staffSelect.value) await loadStaffCashup(Number(staffSelect.value));
+      else renderStaffReport(null);
+    }
+
+    async function loadStaffCashup(staffId) {
+      const token = requireTokenOrRedirect();
+      if (!token || !staffId) return;
+      const res = await fetch(`/api/cashups/staff/${staffId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("staff_token");
+        window.location.assign("/login");
+        return;
+      }
+      if (!res.ok) throw new Error(data && data.error ? data.error : "staff_cashup_failed");
+      renderStaffReport(data);
+    }
+
+    async function loadMasterCashup() {
+      applyCurrencyPrefix();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const res = await fetch("/api/cashups/master", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.assign("/login");
+        return;
+      }
+      if (!res.ok) throw new Error(data && data.error ? data.error : "master_cashup_failed");
+      renderMasterCashup(data);
+    }
+
+    function formatOpenTablesMessage(report) {
+      const open = report && Array.isArray(report.open_tables) ? report.open_tables : [];
+      if (!open.length) return "";
+      const nums = open
+        .map((t) => t.table_number)
+        .filter((n) => n != null)
+        .sort((a, b) => a - b);
+      const list = nums.length ? nums.map((n) => `#${n}`).join(", ") : `${open.length} table(s)`;
+      const who = report.staff && report.staff.name ? report.staff.name : "This staff member";
+      return `${who} still has open tables: ${list}. Close all tables before cashing up.`;
+    }
+
+    function updateCashUpStaffButton(report) {
+      const hasStaff = !!(report && report.staff);
+      const completed = !!(report && report.completed);
+      const hasOpenTables = !!(report && report.has_open_tables);
+      const loggedIn = !!(report && report.is_logged_in);
+      if (!hasStaff) {
+        completeStaffCashupBtn.disabled = true;
+        completeStaffCashupBtn.textContent = "Cash up";
+        return;
+      }
+      const name = report.staff.name || "staff";
+      completeStaffCashupBtn.textContent = `Cash up ${name}`;
+      completeStaffCashupBtn.disabled = completed || hasOpenTables || loggedIn;
+    }
+
+    function updateStaffCashupBalanceStatus() {
+      const expectedCash = moneyToNumber(modalExpectedCash.textContent);
+      const expectedCredit = moneyToNumber(modalExpectedCredit.textContent);
+      const actualCash = moneyToNumber(modalActualCash.value);
+      const actualCredit = moneyToNumber(modalActualCredit.value);
+      const hasInput =
+        modalActualCash.value.trim() !== "" && modalActualCredit.value.trim() !== "";
+      if (!hasInput) {
+        staffCashupBalanceStatus.classList.add("d-none");
+        return;
+      }
+      const balanced = actualCash === expectedCash && actualCredit === expectedCredit;
+      staffCashupBalanceStatus.classList.remove("d-none");
+      staffCashupBalanceStatus.classList.toggle("alert-success", balanced);
+      staffCashupBalanceStatus.classList.toggle("alert-danger", !balanced);
+      staffCashupBalanceStatus.textContent = balanced ? "Cash up balanced" : "Cash up not balanced";
+    }
+
+    function openStaffCashupModal() {
+      if (!currentStaffReport || !currentStaffReport.staff) return;
+      if (currentStaffReport.is_logged_in) {
+        showError(`${currentStaffReport.staff.name} must log out before cashing up.`);
+        return;
+      }
+      if (currentStaffReport.has_open_tables) {
+        showError(formatOpenTablesMessage(currentStaffReport));
+        return;
+      }
+      const s = currentStaffReport.summary || {};
+      staffCashupModalTitle.textContent = `Cash up ${currentStaffReport.staff.name}`;
+      modalExpectedCash.textContent = s.cash_payments || "0.00";
+      modalExpectedCredit.textContent = s.credit_payments || "0.00";
+      modalActualCash.value = s.cash_payments || "0.00";
+      modalActualCredit.value = s.credit_payments || "0.00";
+      staffCashupModalError.classList.add("d-none");
+      staffCashupModalError.textContent = "";
+      updateStaffCashupBalanceStatus();
+      if (staffCashupModal) staffCashupModal.show();
+    }
+
+    async function submitStaffCashupFromModal() {
+      const staffId = Number.parseInt(staffSelect.value, 10);
+      if (!Number.isFinite(staffId)) return;
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const actual_cash = moneyToNumber(modalActualCash.value);
+      const actual_credit = moneyToNumber(modalActualCredit.value);
+      if (modalActualCash.value.trim() === "" || modalActualCredit.value.trim() === "") {
+        staffCashupModalError.textContent = "Enter actual cash and credit amounts.";
+        staffCashupModalError.classList.remove("d-none");
+        return;
+      }
+      if (!Number.isFinite(actual_cash) || actual_cash < 0 || !Number.isFinite(actual_credit) || actual_credit < 0) {
+        staffCashupModalError.textContent = "Amounts must be zero or greater.";
+        staffCashupModalError.classList.remove("d-none");
+        return;
+      }
+      staffCashupModalOkBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/cashups/staff/${staffId}/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ actual_cash, actual_credit }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          if (data && data.error === "open_tables_remain") {
+            const msg =
+              data.message ||
+              (Array.isArray(data.table_numbers) && data.table_numbers.length
+                ? `Open tables remain: ${data.table_numbers.map((n) => `#${n}`).join(", ")}`
+                : "Close all open tables before cashing up.");
+            staffCashupModalError.textContent = msg;
+            showError(msg);
+          } else if (data && data.error === "staff_still_logged_in") {
+            const msg = data.message || "Staff must log out before cashing up.";
+            staffCashupModalError.textContent = msg;
+            showError(msg);
+          } else {
+            staffCashupModalError.textContent =
+              data && data.error ? `Failed: ${data.error}` : "Failed to complete cash up.";
+          }
+          staffCashupModalError.classList.remove("d-none");
+          return;
+        }
+        if (staffCashupModal) staffCashupModal.hide();
+        showSuccess(data.is_balanced ? "Cash up balanced — saved." : "Cash up not balanced — saved.");
+        await loadStaffList();
+        await loadStaffCashup(staffId);
+        await loadMasterCashup();
+      } catch (e) {
+        staffCashupModalError.textContent = "Network error. Please try again.";
+        staffCashupModalError.classList.remove("d-none");
+      } finally {
+        staffCashupModalOkBtn.disabled = false;
+      }
+    }
+
+        async function loadCashups() {
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const res = await fetch("/api/cashups", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => null);
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.assign("/login");
+        return;
+      }
+      if (!res.ok || !Array.isArray(data)) throw new Error("cashups_failed");
+      const has = data.length > 0;
+      listEmpty.classList.toggle("d-none", has);
+      listWrap.classList.toggle("d-none", !has);
+      cashupsTbody.innerHTML = "";
+      const cur = getCurrencyPrefix();
+      for (const r of data) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="text-body-secondary small">${escapeHtml(r.created_at || "")}</td>
+          <td class="text-end">${cur}${escapeHtml(r.total_sales || "0.00")}</td>
+          <td class="text-end">${cur}${escapeHtml(r.cash_total || "0.00")}</td>
+          <td class="text-end">${cur}${escapeHtml(r.card_total || "0.00")}</td>
+          <td class="text-end">${cur}${escapeHtml(r.actual_cash || "0.00")}</td>
+          <td class="text-end fw-semibold">${cur}${escapeHtml(r.difference || "0.00")}</td>`;
+        cashupsTbody.appendChild(tr);
+      }
+    }
+
+    async function submitCashup() {
+      clearError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const actual_cash = moneyToNumber(actualCashEl.value);
+      if (!Number.isFinite(actual_cash) || actual_cash < 0) {
+        showError("Enter a valid actual cash amount.");
+        return;
+      }
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting…";
+      try {
+        const res = await fetch("/api/cashups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ actual_cash }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          if (data && data.error === "staff_cashups_incomplete" && Array.isArray(data.pending_staff)) {
+            showError(`Complete all staff cash ups first. Pending: ${data.pending_staff.join(", ")}`);
+          } else if (data && data.error === "open_tables_remain") {
+            const msg =
+              data.message ||
+              (Array.isArray(data.table_numbers) && data.table_numbers.length
+                ? `Close open tables first: ${data.table_numbers.map((n) => `#${n}`).join(", ")}`
+                : "Close all open tables before master cash up.");
+            showError(msg);
+          } else if (data && data.error === "master_cashup_already_submitted") {
+            showError(data.message || "A master cash up has already been submitted for today.");
+          } else {
+            showError(data && data.error ? `Failed: ${data.error}` : "Failed to submit cash up.");
+          }
+          await loadMasterCashup();
+          return;
+        }
+        showSuccess("Master cash up saved.");
+        actualCashEl.value = "";
+        await loadMasterCashup();
+        await loadCashups();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      } finally {
+        submitBtn.textContent = "Submit master cash up";
+        updateDifferenceUI();
+      }
+    }
+
+
+    function updateDayEndUI() {
+      const de = (masterCashupData && masterCashupData.day_end) || {};
+      const canClose = !!de.can_close_day;
+      dayEndBtn.disabled = !canClose;
+      const blockers = Array.isArray(de.blockers) ? de.blockers : [];
+      if (blockers.length) {
+        dayEndBlockers.innerHTML = blockers.map((b) => `<div>${escapeHtml(b)}</div>`).join("");
+        dayEndBlockers.classList.remove("d-none");
+      } else {
+        dayEndBlockers.textContent = "";
+        dayEndBlockers.classList.add("d-none");
+      }
+      if (de.day_closed) {
+        dayEndBtn.textContent = "Trading day closed";
+        dayEndBtn.disabled = true;
+      } else {
+        dayEndBtn.textContent = "Day end";
+      }
+    }
+
+    async function submitDayEnd() {
+      if (!masterCashupData || !masterCashupData.day_end || !masterCashupData.day_end.can_close_day) return;
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      if (!window.confirm("Close the trading day and start a new day? This cannot be undone.")) return;
+      dayEndBtn.disabled = true;
+      dayEndBtn.textContent = "Closing day…";
+      try {
+        const res = await fetch("/api/cashups/day-end", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          const blockers = data.status && Array.isArray(data.status.blockers) ? data.status.blockers : [];
+          showError(blockers.length ? blockers.join(" ") : data.message || "Could not close the day.");
+          await loadMasterCashup();
+          return;
+        }
+        showSuccess(`Day closed. New trading day: ${data.new_trading_date || "—"}.`);
+        await loadAll();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      } finally {
+        updateDayEndUI();
+      }
+    }
+
+    async function loadAll() {
+      clearError();
+      try {
+        await loadStaffList();
+        await loadMasterCashup();
+        await loadCashups();
+      } catch (e) {
+        showError("Failed to load cash up data.");
+      }
+    }
+
+    reloadBtn.addEventListener("click", loadAll);
+    actualCashEl.addEventListener("input", updateDifferenceUI);
+    submitBtn.addEventListener("click", submitCashup);
+    dayEndBtn.addEventListener("click", submitDayEnd);
+    staffSelect.addEventListener("change", () => {
+      const id = Number.parseInt(staffSelect.value, 10);
+      if (Number.isFinite(id)) loadStaffCashup(id).catch(() => showError("Failed to load staff cash up."));
+    });
+    printStaffCashupBtn.addEventListener("click", printStaffCashup);
+    completeStaffCashupBtn.addEventListener("click", openStaffCashupModal);
+    staffCashupModalOkBtn.addEventListener("click", submitStaffCashupFromModal);
+    modalActualCash.addEventListener("input", updateStaffCashupBalanceStatus);
+    modalActualCredit.addEventListener("input", updateStaffCashupBalanceStatus);
+    requireTokenOrRedirect();
+    loadAll();
+  </script>
+{% endblock %}
+

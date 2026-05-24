@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Closed Tables • POS System</title>
+    <script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = stored || (systemDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-bs-theme", theme);
+      })();
+    </script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body class="bg-body-tertiary">
+    <nav class="navbar bg-body border-bottom">
+      <div class="container">
+        <a class="navbar-brand" href="/tables/list">Tables</a>
+        <div class="ms-auto d-flex gap-2">
+          <a href="/tables/list" class="btn btn-outline-primary btn-sm">POS</a>
+          <a href="/tables/list" class="btn btn-outline-secondary btn-sm">Open Tables</a>
+          <button id="themeToggle" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
+          <button id="logoutBtn" class="btn btn-outline-secondary btn-sm">Switch user</button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="container py-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <h1 class="h4 mb-0">Closed Tables</h1>
+          <div class="text-body-secondary small">Tap a table to view its last closed order.</div>
+        </div>
+        <button id="reloadBtn" class="btn btn-outline-secondary btn-sm">Reload</button>
+      </div>
+
+      <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div id="emptyState" class="p-4 text-body-secondary">
+            No closed tables yet.
+          </div>
+          <div id="tablesGrid" class="row g-2 d-none"></div>
+        </div>
+      </div>
+    </main>
+
+    <div class="modal fade" id="managerAuthModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Manager authorization for closed tables</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-center">
+              <div class="fw-semibold">Enter manager PIN</div>
+              <div class="fs-3 fw-semibold mt-2" id="managerPinDots">_ _ _ _</div>
+            </div>
+            <div id="managerAuthError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+            <div class="row g-2 mt-3 justify-content-center">
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="1" type="button">1</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="2" type="button">2</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="3" type="button">3</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="4" type="button">4</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="5" type="button">5</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="6" type="button">6</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="7" type="button">7</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="8" type="button">8</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="9" type="button">9</button></div>
+              <div class="col-4"><button id="mgrClear" class="btn btn-outline-danger w-100 py-3" type="button">Clear</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 mgr-key" data-key="0" type="button">0</button></div>
+              <div class="col-4"><button id="mgrBack" class="btn btn-outline-secondary w-100 py-3" type="button">⌫</button></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="mgrAuthorizeBtn" type="button" class="btn btn-primary" disabled>Authorize</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+      crossorigin="anonymous"
+    ></script>
+
+    <script>
+      const themeToggle = document.getElementById("themeToggle");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const reloadBtn = document.getElementById("reloadBtn");
+      const errorBox = document.getElementById("errorBox");
+      const emptyState = document.getElementById("emptyState");
+      const tablesGrid = document.getElementById("tablesGrid");
+
+      function getTheme() {
+        return document.documentElement.getAttribute("data-bs-theme") || "light";
+      }
+
+      function setTheme(theme) {
+        document.documentElement.setAttribute("data-bs-theme", theme);
+        localStorage.setItem("theme", theme);
+        updateThemeToggleLabel();
+      }
+
+      function updateThemeToggleLabel() {
+        const theme = getTheme();
+        themeToggle.textContent = theme === "dark" ? "Night" : "Day";
+      }
+
+      function getToken() {
+        return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+      }
+
+      function requireTokenOrRedirect() {
+        const token = getToken();
+        if (!token) window.location.assign("/login");
+        return token;
+      }
+
+      function isManager() {
+        return (localStorage.getItem("staff_role") || "").trim().toLowerCase() === "manager";
+      }
+
+      function hasClosedTablesAccess() {
+        return isManager() || sessionStorage.getItem("closed_tables_authorized") === "1";
+      }
+
+      function grantClosedTablesAccess(pin) {
+        sessionStorage.setItem("closed_tables_authorized", "1");
+        if (pin) sessionStorage.setItem("closed_tables_mgr_pin", pin);
+      }
+
+      function closedTablesAuthHeaders(token) {
+        const h = { Authorization: `Bearer ${token}` };
+        const mgrPin = sessionStorage.getItem("closed_tables_mgr_pin") || "";
+        if (mgrPin && !isManager()) {
+          h["X-Manager-Pin"] = mgrPin;
+        }
+        return h;
+      }
+
+      const managerAuthModalEl = document.getElementById("managerAuthModal");
+      const managerPinDots = document.getElementById("managerPinDots");
+      const managerAuthError = document.getElementById("managerAuthError");
+      const mgrAuthorizeBtn = document.getElementById("mgrAuthorizeBtn");
+      let mgrPin = "";
+
+      function showMgrError(msg) {
+        if (!managerAuthError) return;
+        managerAuthError.textContent = msg;
+        managerAuthError.classList.remove("d-none");
+      }
+      function clearMgrError() {
+        if (!managerAuthError) return;
+        managerAuthError.textContent = "";
+        managerAuthError.classList.add("d-none");
+      }
+      function updateMgrPinUI() {
+        if (!managerPinDots || !mgrAuthorizeBtn) return;
+        const size = mgrPin.length >= 5 ? 5 : 4;
+        const slots = [];
+        for (let i = 0; i < size; i++) slots.push(i < mgrPin.length ? "•" : "_");
+        managerPinDots.textContent = slots.join(" ");
+        mgrAuthorizeBtn.disabled = !(mgrPin.length === 4 || mgrPin.length === 5);
+      }
+      function openManagerAuthModal() {
+        if (!managerAuthModalEl) return;
+        mgrPin = "";
+        clearMgrError();
+        updateMgrPinUI();
+        bootstrap.Modal.getOrCreateInstance(managerAuthModalEl, {
+          backdrop: "static",
+          keyboard: false,
+        }).show();
+      }
+      async function authorizeManagerPin() {
+        clearMgrError();
+        const token = getToken();
+        if (!token) {
+          showMgrError("Login required.");
+          return;
+        }
+        try {
+          const res = await fetch("/api/staff/authorize-manager", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ pin: mgrPin }),
+          });
+          if (!res.ok) {
+            showMgrError("Access denied.");
+            mgrPin = "";
+            updateMgrPinUI();
+            return;
+          }
+          grantClosedTablesAccess(mgrPin);
+          bootstrap.Modal.getInstance(managerAuthModalEl)?.hide();
+          loadTables();
+        } catch (e) {
+          showMgrError("Network error.");
+        }
+      }
+
+      for (const btn of document.querySelectorAll(".mgr-key")) {
+        btn.addEventListener("click", () => {
+          if (mgrPin.length >= 5) return;
+          mgrPin += btn.getAttribute("data-key");
+          updateMgrPinUI();
+        });
+      }
+      document.getElementById("mgrClear")?.addEventListener("click", () => {
+        mgrPin = "";
+        updateMgrPinUI();
+      });
+      document.getElementById("mgrBack")?.addEventListener("click", () => {
+        mgrPin = mgrPin.slice(0, -1);
+        updateMgrPinUI();
+      });
+      mgrAuthorizeBtn?.addEventListener("click", authorizeManagerPin);
+      managerAuthModalEl?.addEventListener("hidden.bs.modal", () => {
+        if (!hasClosedTablesAccess()) {
+          window.location.assign("/tables/list");
+        }
+      });
+
+      function switchStaffUser() {
+        localStorage.removeItem("staff_token");
+        localStorage.removeItem("staff_id");
+        localStorage.removeItem("staff_name");
+        localStorage.removeItem("staff_role");
+        sessionStorage.removeItem("pos_authorized");
+        sessionStorage.removeItem("closed_tables_authorized");
+        sessionStorage.removeItem("closed_tables_mgr_pin");
+        window.location.assign("/staff/login?switch=1");
+      }
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.remove("d-none");
+      }
+
+      function clearError() {
+        errorBox.textContent = "";
+        errorBox.classList.add("d-none");
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function getCurrencyPrefix() {
+        const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+        if (c === "USD") return "$";
+        if (c === "GBP") return "£";
+        return "R";
+      }
+
+      function formatMoneyStr(s) {
+        if (s == null || s === "") return "0.00";
+        return String(s);
+      }
+
+      async function loadTables() {
+        clearError();
+        tablesGrid.innerHTML = "";
+        emptyState.classList.remove("d-none");
+        tablesGrid.classList.add("d-none");
+
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch("/api/tables/closed/details", {
+            headers: closedTablesAuthHeaders(token),
+          });
+          const data = await res.json().catch(() => null);
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("staff_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (res.status === 403 && data && data.error === "manager_authorization_required") {
+            sessionStorage.removeItem("closed_tables_authorized");
+            sessionStorage.removeItem("closed_tables_mgr_pin");
+            openManagerAuthModal();
+            return;
+          }
+
+          if (!res.ok) {
+            showError(data && data.error ? `Failed: ${data.error}` : "Failed to load closed tables.");
+            return;
+          }
+
+          if (!Array.isArray(data) || data.length === 0) {
+            return;
+          }
+
+          emptyState.classList.add("d-none");
+          tablesGrid.classList.remove("d-none");
+
+          for (const row of data) {
+            const t = row && row.table ? row.table : row;
+            const order = row && row.order ? row.order : null;
+            const payment = order && order.payment ? order.payment : null;
+            const items =
+              order && Array.isArray(order.items) && order.items.length
+                ? order.items
+                : payment && Array.isArray(payment.sale_items)
+                  ? payment.sale_items
+                  : [];
+            const itemCount = items.reduce((sum, it) => sum + (it && typeof it.quantity === "number" ? it.quantity : 0), 0);
+            const cur = getCurrencyPrefix();
+            const payLine = payment
+              ? `${String(payment.payment_method || "").toUpperCase()} • ${cur}${formatMoneyStr(payment.sale_total_amount)}`
+              : "—";
+            const tipLine = payment && payment.payment_method === "card"
+              ? `Tip: ${cur}${formatMoneyStr(payment.tip)}`
+              : "";
+            const changeLine = payment && payment.payment_method === "cash"
+              ? `Change: ${cur}${formatMoneyStr(payment.change)}`
+              : "";
+
+            const col = document.createElement("div");
+            col.className = "col-6 col-sm-4 col-md-3";
+
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-outline-secondary w-100 text-start";
+            btn.style.minHeight = "112px";
+            btn.innerHTML = `
+              <div class="fw-semibold">Table #${escapeHtml(t.table_number)}</div>
+              <div class="text-body-secondary small">Pax: ${escapeHtml(t.pax_count)}</div>
+              <div class="text-body-secondary small text-truncate">${escapeHtml(payLine)}</div>
+              <div class="text-body-secondary small text-truncate">Items: ${escapeHtml(itemCount)}</div>
+              ${tipLine ? `<div class="text-body-secondary small text-truncate">${escapeHtml(tipLine)}</div>` : ""}
+              ${changeLine ? `<div class="text-body-secondary small text-truncate">${escapeHtml(changeLine)}</div>` : ""}
+            `;
+            btn.addEventListener("click", () => {
+              window.location.assign(`/tables/${t.id}/order/closed`);
+            });
+
+            col.appendChild(btn);
+            tablesGrid.appendChild(col);
+          }
+        } catch (err) {
+          showError("Network error. Please try again.");
+        }
+      }
+
+      logoutBtn.addEventListener("click", switchStaffUser);
+
+      themeToggle.addEventListener("click", () => {
+        setTheme(getTheme() === "dark" ? "light" : "dark");
+      });
+
+      reloadBtn.addEventListener("click", loadTables);
+
+      requireTokenOrRedirect();
+      updateThemeToggleLabel();
+      if (hasClosedTablesAccess()) {
+        loadTables();
+      } else {
+        openManagerAuthModal();
+      }
+    </script>
+
+    <script>
+      (function () {
+        const mgmt = ["/products", "/categories", "/accounts", "/staff/new", "/settings", "/cashups", "/cash-ups"];
+        const path = window.location.pathname || "";
+        if (!mgmt.some((p) => path === p || path.startsWith(p + "/"))) {
+          sessionStorage.removeItem("pos_authorized");
+        }
+      })();
+    </script>
+  </body>
+</html>
+

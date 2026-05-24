@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Closed Order • Table {{ table_id }}{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h4 mb-0"><span id="tableTitle">Table {{ table_id }}</span> • Closed Order</h1>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="/tables/closed" class="btn btn-outline-secondary btn-sm">Back to closed tables</a>
+      <button id="reopenBtn" class="btn btn-primary btn-sm">Reopen</button>
+      <button id="reloadBtn" class="btn btn-outline-secondary btn-sm">Reload</button>
+    </div>
+  </div>
+
+  <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="text-body-secondary small">Status</div>
+          <div class="fw-semibold"><span id="orderStatus">—</span></div>
+        </div>
+        <div class="text-end">
+          <div class="text-body-secondary small">Updated</div>
+          <div class="fw-semibold"><span id="orderUpdatedAt">—</span></div>
+        </div>
+      </div>
+
+      <hr class="my-3" />
+
+      <div id="itemsEmpty" class="text-body-secondary small">No items.</div>
+      <div id="itemsList" class="list-group list-group-flush d-none"></div>
+
+      <hr class="my-3" />
+
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="text-body-secondary">Total</div>
+        <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="totalAmount">0.00</span></div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+      const TABLE_ID = Number.parseInt("{{ table_id }}", 10);
+
+      const reloadBtn = document.getElementById("reloadBtn");
+      const reopenBtn = document.getElementById("reopenBtn");
+      const errorBox = document.getElementById("errorBox");
+
+      const orderStatusEl = document.getElementById("orderStatus");
+      const orderUpdatedAtEl = document.getElementById("orderUpdatedAt");
+      const itemsEmpty = document.getElementById("itemsEmpty");
+      const itemsList = document.getElementById("itemsList");
+      const totalAmountEl = document.getElementById("totalAmount");
+      const tableTitleEl = document.getElementById("tableTitle");
+
+      function getToken() {
+        return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+      }
+
+      function apiHeaders(token) {
+        if (typeof window.closedTablesAuthHeaders === "function") {
+          return window.closedTablesAuthHeaders(token);
+        }
+        return { Authorization: `Bearer ${token}` };
+      }
+
+      function requireTokenOrRedirect() {
+        const token = getToken();
+        if (!token) window.location.assign("/login");
+        return token;
+      }
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.remove("d-none");
+      }
+
+      function clearError() {
+        errorBox.textContent = "";
+        errorBox.classList.add("d-none");
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function getCurrencyPrefix() {
+        const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+        if (c === "USD") return "$";
+        if (c === "GBP") return "£";
+        return "R";
+      }
+
+      function applyCurrencyPrefix() {
+        const cur = getCurrencyPrefix();
+        document.querySelectorAll(".currencyPrefix").forEach((el) => (el.textContent = cur));
+      }
+
+      function renderScreen(payload) {
+        applyCurrencyPrefix();
+        const cur = getCurrencyPrefix();
+        const table = payload && payload.table ? payload.table : null;
+        const order = payload && payload.order ? payload.order : payload;
+
+        if (table && table.table_number != null) {
+          tableTitleEl.textContent = `Table #${table.table_number}`;
+        }
+        orderStatusEl.textContent = order && order.status ? String(order.status) : "—";
+        orderUpdatedAtEl.textContent = order && order.updated_at ? String(order.updated_at) : "—";
+
+        const payment = order && order.payment ? order.payment : null;
+        const items =
+          order && Array.isArray(order.items) && order.items.length
+            ? order.items
+            : payment && Array.isArray(payment.sale_items)
+              ? payment.sale_items
+              : [];
+        const hasItems = items.length > 0;
+        itemsEmpty.classList.toggle("d-none", hasItems);
+        itemsList.classList.toggle("d-none", !hasItems);
+        if (!hasItems) {
+          itemsList.innerHTML = "";
+          totalAmountEl.textContent = "0.00";
+          return;
+        }
+
+        itemsList.innerHTML = items
+          .map((it) => {
+            const name = it && it.product && it.product.name ? it.product.name : `Product #${it.product_id}`;
+            const qty = it && typeof it.quantity === "number" ? it.quantity : 0;
+            const price = it && it.price_at_time != null ? String(it.price_at_time) : "0.00";
+            const lineTotal = it && it.line_total != null ? String(it.line_total) : "0.00";
+            return `
+              <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="text-truncate">
+                    <div class="fw-semibold">${escapeHtml(name)}</div>
+                    <div class="text-body-secondary small">Qty ${qty} • ${cur}${escapeHtml(price)} each</div>
+                  </div>
+                  <div class="fw-semibold">${cur}${escapeHtml(lineTotal)}</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        totalAmountEl.textContent =
+          payment && payment.sale_total_amount != null
+            ? String(payment.sale_total_amount)
+            : order && order.total_amount != null
+              ? String(order.total_amount)
+              : "0.00";
+
+        // Optional payment meta (only present when the table was closed via checkout).
+        const p = payment;
+        if (p && p.payment_method) {
+          const extra = document.getElementById("paymentExtra");
+          if (extra) extra.remove();
+          const div = document.createElement("div");
+          div.id = "paymentExtra";
+          const cashLine =
+            p.payment_method === "cash"
+              ? `<div>Received: ${cur}${escapeHtml(p.cash_received || "0.00")}</div><div>Change: ${cur}${escapeHtml(p.change || "0.00")}</div>`
+              : "";
+          const cardLine =
+            p.payment_method === "card"
+              ? `<div>Card amount: ${cur}${escapeHtml(p.card_amount || "0.00")}</div><div>Tip: ${cur}${escapeHtml(p.tip || "0.00")}</div>`
+              : "";
+          div.className = "alert alert-light mt-3 mb-0";
+          div.innerHTML = `
+            <div class="fw-semibold">Payment</div>
+            <div class="text-body-secondary small">Sale #${escapeHtml(p.sale_id)} • ${escapeHtml(String(p.payment_method).toUpperCase())} • ${cur}${escapeHtml(p.sale_total_amount)}</div>
+            ${cashLine}
+            ${cardLine}
+          `;
+          document.querySelector(".card-body").appendChild(div);
+        }
+      }
+
+      async function loadClosedOrder() {
+        clearError();
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch(`/api/tables/${TABLE_ID}/order/closed/latest`, {
+            headers: apiHeaders(token),
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("staff_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (res.status === 403 && data && data.error === "manager_authorization_required") {
+            sessionStorage.removeItem("closed_tables_authorized");
+            sessionStorage.removeItem("closed_tables_mgr_pin");
+            if (typeof window.openManagerAuth === "function") window.openManagerAuth("closed_tables");
+            return;
+          }
+
+          if (!res.ok) {
+            showError(data && data.error ? `Failed: ${data.error}` : "Failed to load closed order.");
+            return;
+          }
+
+          renderScreen(data);
+        } catch (e) {
+          showError("Network error. Please try again.");
+        }
+      }
+
+      async function reopenTable() {
+        clearError();
+        const token = requireTokenOrRedirect();
+        if (!token) return;
+        reopenBtn.disabled = true;
+        reopenBtn.textContent = "Reopening…";
+        try {
+          const res = await fetch(`/api/tables/${TABLE_ID}/reopen`, {
+            method: "POST",
+            headers: apiHeaders(token),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("staff_token");
+            window.location.assign("/login");
+            return;
+          }
+          if (res.status === 403 && data && data.error === "manager_authorization_required") {
+            sessionStorage.removeItem("closed_tables_authorized");
+            sessionStorage.removeItem("closed_tables_mgr_pin");
+            if (typeof window.openManagerAuth === "function") window.openManagerAuth("closed_tables");
+            return;
+          }
+          if (!res.ok) {
+            showError(data && data.error ? `Failed: ${data.error}` : "Failed to reopen table.");
+            return;
+          }
+          window.location.assign(`/tables/${TABLE_ID}/order`);
+        } catch (e) {
+          showError("Network error. Please try again.");
+        } finally {
+          reopenBtn.disabled = false;
+          reopenBtn.textContent = "Reopen";
+        }
+      }
+
+      reloadBtn.addEventListener("click", loadClosedOrder);
+      reopenBtn.addEventListener("click", reopenTable);
+
+      window.addEventListener("closed-tables-authorized", () => loadClosedOrder());
+      window.addEventListener("closed-tables-auth-cancelled", () => {
+        window.location.assign("/tables/list");
+      });
+
+      requireTokenOrRedirect();
+      if (typeof window.hasClosedTablesAccess === "function" && window.hasClosedTablesAccess()) {
+        loadClosedOrder();
+      }
+    </script>
+{% endblock %}
+

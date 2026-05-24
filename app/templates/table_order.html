@@ -1,0 +1,2850 @@
+{% extends "base.html" %}
+
+{% block title %}Table {{ table_id }} • Order{% endblock %}
+
+{% block head %}
+  <style>
+    .btn-orange {
+      --bs-btn-color: #fff;
+      --bs-btn-bg: #fd7e14;
+      --bs-btn-border-color: #fd7e14;
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: #e96b02;
+      --bs-btn-hover-border-color: #e96b02;
+      --bs-btn-active-color: #fff;
+      --bs-btn-active-bg: #d65f02;
+      --bs-btn-active-border-color: #d65f02;
+      --bs-btn-focus-shadow-rgb: 253, 126, 20;
+    }
+
+    /* Exact spacing between categories and products */
+    #categoriesWrap {
+      margin-bottom: 10px !important;
+    }
+
+    /* Ensure numpad modal always sits above checkout on mobile */
+    #moneyNumpadModal {
+      z-index: 1091;
+    }
+    #moneyNumpadModal + .modal-backdrop {
+      z-index: 1090;
+    }
+    #temperatureModal {
+      z-index: 1105;
+    }
+    #temperatureModal + .modal-backdrop {
+      z-index: 1104;
+    }
+
+    /* Print only the receipt */
+    @media print {
+      body * {
+        visibility: hidden !important;
+      }
+      #receiptPrintArea,
+      #receiptPrintArea * {
+        visibility: visible !important;
+      }
+      #receiptPrintArea {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 80mm;
+        padding: 8mm 6mm;
+        background: #fff !important;
+        color: #000 !important;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="h4 mb-0">Table {{ table_id }}</div>
+      <div class="d-flex align-items-center gap-2">
+        <div class="text-body-secondary fw-semibold">Pax</div>
+        <button id="paxBtn" type="button" class="btn btn-outline-secondary btn-sm">
+          <span id="paxValue" class="fw-semibold">1</span>
+        </button>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <div class="text-body-secondary fw-semibold">Owner</div>
+        <button id="ownerBtn" type="button" class="btn btn-outline-secondary btn-sm">
+          <span class="fw-semibold" id="tableOwnerName">—</span>
+        </button>
+      </div>
+    </div>
+    <!-- <div class="d-flex gap-2 flex-wrap">
+      <a href="/pos" class="btn btn-outline-primary btn-sm">POS</a>
+      <a href="/tables/list" class="btn btn-outline-dark btn-sm">Show Tables</a>
+      <a href="/reports/today" class="btn btn-outline-dark btn-sm">Reports</a>
+    </div> -->
+  </div>
+
+  <div class="row g-3 g-lg-4">
+    <div class="col-12 col-lg-7">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1 class="h5 mb-0">Products</h1>
+        <button id="reloadBtn" class="btn btn-outline-secondary btn-sm">Reload</button>
+      </div>
+      <div id="categoriesWrap" class="d-none mb-2">
+        <ul id="categoriesPills" class="nav nav-pills flex-wrap gap-2"></ul>
+      </div>
+      <div id="productsAlert" class="alert alert-danger d-none" role="alert"></div>
+      <div id="productsSkeleton" class="card">
+        <div class="card-body">
+          <div class="placeholder-glow">
+            <span class="placeholder col-7"></span>
+            <span class="placeholder col-4"></span>
+            <span class="placeholder col-4"></span>
+            <span class="placeholder col-6"></span>
+          </div>
+          <div class="text-body-secondary small mt-2">Loading products…</div>
+        </div>
+      </div>
+      <div id="productsGrid" class="row g-2 d-none"></div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+      <div class="sticky-lg-top" style="top: 1rem">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h2 class="h5 mb-0">Items</h2>
+              <button id="clearBtn" class="btn btn-outline-danger btn-sm">Clear</button>
+            </div>
+
+            <div id="cartEmpty" class="text-body-secondary small">No items yet. Tap a product to add.</div>
+            <div id="cartList" class="list-group list-group-flush d-none"></div>
+
+            <hr class="my-3" />
+
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Subtotal</div>
+              <div class="fw-semibold"><span id="currencySymbol">$</span><span id="subtotalAmount">0.00</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-1">
+              <div class="text-body-secondary">Tip</div>
+              <div class="fw-semibold"><span id="currencySymbolTip">$</span><span id="tipAmount">0.00</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-1">
+              <div class="text-body-secondary fw-semibold">Total</div>
+              <div class="fs-5 fw-semibold"><span id="currencySymbolTotal">$</span><span id="totalAmount">0.00</span></div>
+            </div>
+
+            <div class="d-flex gap-2 mt-3 flex-wrap">
+              <button id="checkoutBtn" class="btn btn-success flex-grow-1" type="button" disabled>Pay Bill</button>
+              <button id="printBillBtn" class="btn btn-outline-secondary flex-grow-1" type="button" disabled>Print Bill</button>
+              <button id="tipBtn" class="btn btn-outline-secondary flex-grow-1" type="button" disabled>Add Tip</button>
+              <button id="transferBtn" class="btn btn-outline-secondary flex-grow-1" type="button" disabled>Transfer</button>
+              <button id="saveBtn" class="btn btn-primary flex-grow-1" disabled>Commit order</button>
+            </div>
+            <div id="saveSuccess" class="alert alert-success d-none mt-3 mb-0" role="alert"></div>
+            <div id="saveError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- Pax keypad modal -->
+    <div class="modal fade" id="paxModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Set pax</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Pax</div>
+              <div class="display-6 mb-0"><span id="paxDraftDisplay">1</span></div>
+            </div>
+            <div class="text-body-secondary small mt-1">Tap numbers, then Done.</div>
+
+            <div class="row g-2 mt-3">
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="1">1</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="2">2</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="3">3</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="4">4</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="5">5</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="6">6</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="7">7</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="8">8</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="9">9</button></div>
+              <div class="col-4"><button class="btn btn-outline-danger w-100 py-3" id="paxClear">Clear</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 pax-key" data-key="0">0</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3" id="paxBack">⌫</button></div>
+            </div>
+
+            <div id="paxModalError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="paxDone" type="button" class="btn btn-primary">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Money numpad modal (mobile-friendly) -->
+    <div class="modal fade" id="moneyNumpadModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="moneyNumpadTitle">Enter amount</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Amount</div>
+              <div class="display-6 mb-0"><span class="currencyPrefix">R</span><span id="moneyNumpadDisplay">0.00</span></div>
+            </div>
+            <div class="text-body-secondary small mt-1">Tap numbers, then Done.</div>
+
+            <div class="row g-2 mt-3">
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="1">1</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="2">2</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="3">3</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="4">4</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="5">5</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="6">6</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="7">7</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="8">8</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="9">9</button></div>
+              <div class="col-4"><button class="btn btn-outline-danger w-100 py-3" id="moneyClear">Clear</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key="0">0</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3" id="moneyBack">⌫</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key" data-key=".">.</button></div>
+              <div class="col-8">
+                <button class="btn btn-primary w-100 py-3" id="moneyDone">Done</button>
+              </div>
+            </div>
+
+            <div id="moneyNumpadError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pay Bill modal -->
+    <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Pay Bill</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="checkoutEmpty" class="alert alert-secondary py-2 small d-none mb-0" role="status">
+              No items on this bill. Use <strong>Close table</strong> below to clear the open table.
+            </div>
+            <div id="checkoutPaymentSections">
+            <div id="checkoutItems" class="list-group list-group-flush"></div>
+
+            <hr class="my-3" />
+
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Total</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="checkoutTotal">0.00</span></div>
+            </div>
+
+            <div class="mt-3">
+              <div class="fw-semibold mb-2">Payment method</div>
+              <div class="btn-group w-100" role="group" aria-label="Payment method">
+                <input class="btn-check" type="radio" name="paymentMethod" id="pmCash" value="cash" checked autocomplete="off" />
+                <label class="btn btn-outline-primary" for="pmCash">Cash</label>
+                <input class="btn-check" type="radio" name="paymentMethod" id="pmCard" value="card" autocomplete="off" />
+                <label class="btn btn-outline-primary" for="pmCard">Card</label>
+                <input class="btn-check" type="radio" name="paymentMethod" id="pmAccount" value="account" autocomplete="off" />
+                <label class="btn btn-outline-primary" for="pmAccount">On account</label>
+              </div>
+            </div>
+
+            <div id="cashSection" class="mt-3">
+              <label for="cashReceived" class="form-label fw-semibold mb-1">Cash received</label>
+              <input
+                id="cashReceived"
+                type="text"
+                class="form-control"
+                inputmode="decimal"
+                pattern="[0-9]*[.,]?[0-9]*"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+              <div class="d-flex justify-content-between align-items-center mt-2">
+                <div class="text-body-secondary">Change</div>
+                <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="cashChange">0.00</span></div>
+              </div>
+              <div id="cashHelp" class="text-body-secondary small mt-1">Enter the amount received to calculate change.</div>
+            </div>
+
+
+            <div id="accountSection" class="mt-3 d-none">
+              <div class="fw-semibold mb-2">Account holder</div>
+              <div id="accountListEmpty" class="alert alert-secondary py-2 small mb-2 d-none" role="status">
+                No customer accounts yet. A manager can add accounts from <strong>Accounts</strong> in the menu.
+              </div>
+              <div id="accountList" class="list-group border rounded mb-2" style="max-height: 240px; overflow-y: auto;"></div>
+              <select id="accountSelect" class="d-none" aria-hidden="true" tabindex="-1">
+                <option value="">Select account…</option>
+              </select>
+              <div class="text-body-secondary small">Tap an account holder to select. The bill will be added to their balance.</div>
+            </div>
+
+            <div id="cardSection" class="mt-3 d-none">
+              <label for="cardTip" class="form-label fw-semibold mb-1">Card amount</label>
+              <input
+                id="cardTip"
+                type="text"
+                class="form-control"
+                inputmode="decimal"
+                pattern="[0-9]*[.,]?[0-9]*"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+              <div class="d-flex justify-content-between align-items-center mt-2">
+                <div class="text-body-secondary">Tip</div>
+                <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="cardTipDisplay">0.00</span></div>
+              </div>
+              <div class="text-body-secondary small mt-1">Enter total charged to card. Tip is calculated automatically.</div>
+            </div>
+
+            </div>
+
+            <div id="checkoutError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="confirmSaleBtn" type="button" class="btn btn-success" disabled>Pay Bill</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tip modal -->
+    <div class="modal fade" id="tipModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Add tip</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-body-secondary small mb-2">Choose how you'd like to add a tip.</div>
+
+            <div class="d-grid gap-2">
+              <button type="button" class="btn btn-outline-primary py-3" id="tipChoosePercentBtn">Tip percentage (%)</button>
+              <button type="button" class="btn btn-outline-primary py-3" id="tipChooseAmountBtn">Tip amount</button>
+            </div>
+
+            <hr class="my-3" />
+
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-body-secondary">Subtotal</div>
+              <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="tipPreviewSubtotal">0.00</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-1">
+              <div class="text-body-secondary">Tip</div>
+              <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="tipPreviewTip">0.00</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-1">
+              <div class="text-body-secondary fw-semibold">Total</div>
+              <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="tipPreviewTotal">0.00</span></div>
+            </div>
+
+            <div id="tipModalError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-danger" id="tipClearBtn">Clear tip</button>
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transfer modal -->
+    <div class="modal fade" id="transferModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Transfer</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-body-secondary small mb-2">Choose how you'd like to transfer items.</div>
+            <div class="d-grid gap-2">
+              <button type="button" class="btn btn-outline-primary py-3" id="transferWholeBtn">
+                Transfer table (all items)
+              </button>
+              <button type="button" class="btn btn-outline-primary py-3" id="transferSplitBtn">
+                Split table (selected items)
+              </button>
+            </div>
+            <div id="transferModalError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transfer details modal -->
+    <div class="modal fade" id="transferDetailsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="transferDetailsTitle">Transfer</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <label for="transferTargetSelect" class="form-label fw-semibold mb-1">To table</label>
+            <select id="transferTargetSelect" class="form-select"></select>
+            <div class="text-body-secondary small mt-1">Choose an open table to receive the items.</div>
+
+            <div id="transferItemsWrap" class="mt-3 d-none">
+              <div class="fw-semibold mb-2">Select items to move</div>
+              <div id="transferItemsList" class="list-group list-group-flush"></div>
+              <div class="text-body-secondary small mt-2">
+                Tip: Set “Move qty” per item (0 = keep on this table).
+              </div>
+            </div>
+
+            <div id="transferDetailsError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="transferConfirmBtn" disabled>Transfer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receipt modal -->
+    <div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Receipt</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="receiptPrintArea">
+              <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                  <div class="text-body-secondary small">Table</div>
+                  <div class="fw-semibold">#<span id="receiptTableNumber">—</span> • Pax <span id="receiptPax">—</span></div>
+                  <div class="text-body-secondary small">Table owner: <span id="receiptStaffName">—</span></div>
+                </div>
+                <div class="text-end">
+                  <div class="text-body-secondary small">Sale</div>
+                  <div class="fw-semibold">#<span id="receiptSaleId">—</span></div>
+                  <div class="text-body-secondary small"><span id="receiptCreatedAt">—</span></div>
+                </div>
+              </div>
+
+              <hr class="my-3" />
+
+              <div id="receiptItems" class="list-group list-group-flush"></div>
+
+              <hr class="my-3" />
+
+              <div class="d-flex justify-content-between align-items-center">
+                <div class="text-body-secondary">Total</div>
+                <div class="fs-5 fw-semibold"><span class="currencyPrefix">R</span><span id="receiptTotal">0.00</span></div>
+              </div>
+
+              <div class="mt-2">
+                <div class="text-body-secondary small">Payment</div>
+                <div class="fw-semibold"><span id="receiptPaymentMethod">—</span></div>
+                <div id="receiptCashMeta" class="d-none mt-1 text-body-secondary small">
+                  <div>Received: <span class="currencyPrefix">R</span><span id="receiptCashReceived">0.00</span></div>
+                  <div>Change: <span class="currencyPrefix">R</span><span id="receiptCashChange">0.00</span></div>
+                </div>
+                <div id="receiptCardMeta" class="d-none mt-1 text-body-secondary small">
+                  <div>Card Amount: <span class="currencyPrefix">R</span><span id="receiptCardAmount">0.00</span></div>
+                  <div>Tip: <span class="currencyPrefix">R</span><span id="receiptCardTip">0.00</span></div>
+                </div>
+              </div>
+
+              <div id="receiptPaidRow" class="d-flex justify-content-between align-items-center mt-1 d-none">
+                <div class="text-body-secondary">Paid</div>
+                <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="receiptPaid">0.00</span></div>
+              </div>
+              <div id="receiptOwingRow" class="d-flex justify-content-between align-items-center mt-1">
+                <div class="text-body-secondary fw-semibold">Amount owing</div>
+                <div class="fw-semibold"><span class="currencyPrefix">R</span><span id="receiptOwing">0.00</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <div class="d-flex gap-2 w-100">
+              <button type="button" class="btn btn-outline-secondary flex-grow-1" id="closeReceiptBtn">Close</button>
+              <button type="button" class="btn btn-outline-primary flex-grow-1" id="printReceiptBtn">Print</button>
+              <button type="button" class="btn btn-primary flex-grow-1" id="newSaleBtn">New Sale</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change owner modal -->
+    <div class="modal fade" id="ownerModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Change table owner</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-body-secondary small mb-2">Select the staff member who should own this table.</div>
+            <select id="ownerSelect" class="form-select"></select>
+            <div id="ownerError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="ownerSaveBtn" type="button" class="btn btn-primary">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cooking instruction picker (products with a prep instruction set) -->
+    <div class="modal fade" id="temperatureModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="temperatureModalTitle">Cooking instruction</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-body-secondary small mb-3" id="temperatureModalProduct"></div>
+            <div id="temperatureOptionsGrid" class="row g-2"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manager PIN for owner change -->
+    <div class="modal fade" id="ownerMgrPinModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Manager PIN required</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-center">
+              <div class="fw-semibold">Enter manager PIN</div>
+              <div class="fs-3 fw-semibold mt-2" id="ownerMgrPinDots">_ _ _ _</div>
+            </div>
+            <div id="ownerMgrPinError" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+
+            <div class="row g-2 mt-3 justify-content-center">
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="1">1</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="2">2</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="3">3</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="4">4</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="5">5</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="6">6</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="7">7</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="8">8</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="9">9</button></div>
+              <div class="col-4"><button id="ownerMgrClear" class="btn btn-outline-danger w-100 py-3">Clear</button></div>
+              <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 owner-mgr-key" data-key="0">0</button></div>
+              <div class="col-4"><button id="ownerMgrBack" class="btn btn-outline-secondary w-100 py-3">⌫</button></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button id="ownerMgrAuthorizeBtn" type="button" class="btn btn-primary" disabled>Authorize</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+{% endblock %}
+
+{% block scripts %}
+  <script>
+      const TABLE_ID = Number.parseInt("{{ table_id }}", 10);
+
+      const reloadBtn = document.getElementById("reloadBtn");
+      const paxBtn = document.getElementById("paxBtn");
+      const paxValue = document.getElementById("paxValue");
+      const tableOwnerNameEl = document.getElementById("tableOwnerName");
+      const ownerBtn = document.getElementById("ownerBtn");
+
+      const paxModalEl = document.getElementById("paxModal");
+      const paxDraftDisplay = document.getElementById("paxDraftDisplay");
+      const paxModalError = document.getElementById("paxModalError");
+      const paxDone = document.getElementById("paxDone");
+      const paxClear = document.getElementById("paxClear");
+      const paxBack = document.getElementById("paxBack");
+      const paxModal = new bootstrap.Modal(paxModalEl);
+
+      const moneyNumpadModalEl = document.getElementById("moneyNumpadModal");
+      const moneyNumpadDisplay = document.getElementById("moneyNumpadDisplay");
+      const moneyNumpadTitleEl = document.getElementById("moneyNumpadTitle");
+      const moneyNumpadError = document.getElementById("moneyNumpadError");
+      const moneyClear = document.getElementById("moneyClear");
+      const moneyBack = document.getElementById("moneyBack");
+      const moneyDone = document.getElementById("moneyDone");
+      const moneyNumpadModal = new bootstrap.Modal(moneyNumpadModalEl);
+      let moneyDraft = "0";
+      /** @type {HTMLInputElement|null} */
+      let moneyTargetInput = null;
+      let returnToCheckoutAfterNumpad = false;
+      let pendingShowNumpad = false;
+      /** @type {string|null} */
+      let moneyPrefixOverride = null;
+
+      const productsGrid = document.getElementById("productsGrid");
+      const productsSkeleton = document.getElementById("productsSkeleton");
+      const productsAlert = document.getElementById("productsAlert");
+      const categoriesWrap = document.getElementById("categoriesWrap");
+      const categoriesPills = document.getElementById("categoriesPills");
+
+      const cartEmpty = document.getElementById("cartEmpty");
+      const cartList = document.getElementById("cartList");
+      const totalAmountEl = document.getElementById("totalAmount");
+      const subtotalAmountEl = document.getElementById("subtotalAmount");
+      const tipAmountEl = document.getElementById("tipAmount");
+      const currencySymbolEl = document.getElementById("currencySymbol");
+      const currencySymbolTipEl = document.getElementById("currencySymbolTip");
+      const currencySymbolTotalEl = document.getElementById("currencySymbolTotal");
+      const saveBtn = document.getElementById("saveBtn");
+      const checkoutBtn = document.getElementById("checkoutBtn");
+      const printBillBtn = document.getElementById("printBillBtn");
+      const tipBtn = document.getElementById("tipBtn");
+      const transferBtn = document.getElementById("transferBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const saveSuccess = document.getElementById("saveSuccess");
+      const saveError = document.getElementById("saveError");
+
+      const printReceiptTableEl = document.getElementById("printReceiptTable");
+      const printReceiptPaxEl = document.getElementById("printReceiptPax");
+      const printReceiptMetaEl = document.getElementById("printReceiptMeta");
+      const printReceiptItemsEl = document.getElementById("printReceiptItems");
+      const printReceiptCurrencyEl = document.getElementById("printReceiptCurrency");
+      const printReceiptTotalEl = document.getElementById("printReceiptTotal");
+
+      const checkoutModalEl = document.getElementById("checkoutModal");
+      const checkoutItemsEl = document.getElementById("checkoutItems");
+      const checkoutEmptyEl = document.getElementById("checkoutEmpty");
+      const checkoutPaymentSectionsEl = document.getElementById("checkoutPaymentSections");
+      const checkoutTotalEl = document.getElementById("checkoutTotal");
+      const cashSectionEl = document.getElementById("cashSection");
+      const cashReceivedEl = document.getElementById("cashReceived");
+      const cashChangeEl = document.getElementById("cashChange");
+      const cardSectionEl = document.getElementById("cardSection");
+      const accountSectionEl = document.getElementById("accountSection");
+      const accountSelectEl = document.getElementById("accountSelect");
+      const accountListEl = document.getElementById("accountList");
+      const accountListEmptyEl = document.getElementById("accountListEmpty");
+      let selectedAccountId = null;
+      let customerAccounts = [];
+      let checkoutAccountManagerPin = "";
+      const cardTipEl = document.getElementById("cardTip");
+      const cardTipDisplayEl = document.getElementById("cardTipDisplay");
+      const checkoutErrorEl = document.getElementById("checkoutError");
+      const confirmSaleBtn = document.getElementById("confirmSaleBtn");
+      const checkoutModal = new bootstrap.Modal(checkoutModalEl);
+
+      const receiptModalEl = document.getElementById("receiptModal");
+      const receiptTableNumberEl = document.getElementById("receiptTableNumber");
+      const receiptPaxEl = document.getElementById("receiptPax");
+      const receiptStaffNameEl = document.getElementById("receiptStaffName");
+      const receiptSaleIdEl = document.getElementById("receiptSaleId");
+      const receiptCreatedAtEl = document.getElementById("receiptCreatedAt");
+      const receiptPaymentMethodEl = document.getElementById("receiptPaymentMethod");
+      const receiptCashMetaEl = document.getElementById("receiptCashMeta");
+      const receiptCashReceivedEl = document.getElementById("receiptCashReceived");
+      const receiptCashChangeEl = document.getElementById("receiptCashChange");
+      const receiptCardMetaEl = document.getElementById("receiptCardMeta");
+      const receiptCardAmountEl = document.getElementById("receiptCardAmount");
+      const receiptCardTipEl = document.getElementById("receiptCardTip");
+      const receiptItemsEl = document.getElementById("receiptItems");
+      const receiptTotalEl = document.getElementById("receiptTotal");
+      const receiptPaidRowEl = document.getElementById("receiptPaidRow");
+      const receiptPaidEl = document.getElementById("receiptPaid");
+      const receiptOwingRowEl = document.getElementById("receiptOwingRow");
+      const receiptOwingEl = document.getElementById("receiptOwing");
+      const printReceiptBtn = document.getElementById("printReceiptBtn");
+      const newSaleBtn = document.getElementById("newSaleBtn");
+      const closeReceiptBtn = document.getElementById("closeReceiptBtn");
+      const receiptModal = new bootstrap.Modal(receiptModalEl);
+
+      /** @type {"preview"|"paid"} */
+      let receiptMode = "preview";
+      let openedByStaffName = "";
+      let tableHasClosedHistory = false;
+      /** Lines on the bill when last committed (product_id|temperature). */
+      let committedLineKeys = new Set();
+      let orderStateLoaded = false;
+      let removeAuthPin = "";
+      let pendingRemove = null;
+
+      function cartLineKey(productId, temperature) {
+        return `${productId}|${temperature || ""}`;
+      }
+
+      function rebuildCommittedLineKeysFromItems(items) {
+        committedLineKeys = new Set();
+        if (!Array.isArray(items)) return;
+        for (const it of items) {
+          if (!it || typeof it.product_id !== "number") continue;
+          const temp = it.temperature != null ? String(it.temperature) : "";
+          committedLineKeys.add(cartLineKey(it.product_id, temp));
+        }
+      }
+
+      function rebuildCommittedLineKeysFromCart() {
+        committedLineKeys = new Set(
+          cart.map((it) => cartLineKey(it.product_id, it.temperature || ""))
+        );
+      }
+
+      function clearCommittedLineKeys() {
+        committedLineKeys = new Set();
+      }
+
+      function syncCommittedStateFromOrder(data) {
+        const committed = !!(data && (data.is_committed || data.committed_at));
+        if (committed && data && Array.isArray(data.items)) {
+          rebuildCommittedLineKeysFromItems(data.items);
+        } else {
+          clearCommittedLineKeys();
+        }
+      }
+
+      /** Only lines that were on the bill at commit need manager PIN to remove. */
+      function lineRequiresRemoveAuth(productId, temperature) {
+        if (isManager()) return false;
+        return committedLineKeys.has(cartLineKey(productId, temperature || ""));
+      }
+
+      // Tip state (frontend-only)
+      /** @type {"none"|"percent"|"amount"} */
+      let tipMode = "none";
+      /** @type {number|null} */
+      let tipPercent = null;
+      /** @type {number|null} */
+      let tipFixedAmount = null;
+
+      const tipModalEl = document.getElementById("tipModal");
+      const tipModal = new bootstrap.Modal(tipModalEl);
+      const tipChoosePercentBtn = document.getElementById("tipChoosePercentBtn");
+      const tipChooseAmountBtn = document.getElementById("tipChooseAmountBtn");
+      const tipPreviewSubtotalEl = document.getElementById("tipPreviewSubtotal");
+      const tipPreviewTipEl = document.getElementById("tipPreviewTip");
+      const tipPreviewTotalEl = document.getElementById("tipPreviewTotal");
+      const tipModalError = document.getElementById("tipModalError");
+      const tipClearBtn = document.getElementById("tipClearBtn");
+
+      // Transfer UI
+      const transferModalEl = document.getElementById("transferModal");
+      const transferModal = new bootstrap.Modal(transferModalEl);
+      const transferWholeBtn = document.getElementById("transferWholeBtn");
+      const transferSplitBtn = document.getElementById("transferSplitBtn");
+      const transferModalError = document.getElementById("transferModalError");
+
+      const transferDetailsModalEl = document.getElementById("transferDetailsModal");
+      const transferDetailsModal = new bootstrap.Modal(transferDetailsModalEl);
+      const transferDetailsTitleEl = document.getElementById("transferDetailsTitle");
+      const transferTargetSelect = document.getElementById("transferTargetSelect");
+      const transferItemsWrap = document.getElementById("transferItemsWrap");
+      const transferItemsList = document.getElementById("transferItemsList");
+      const transferDetailsError = document.getElementById("transferDetailsError");
+      const transferConfirmBtn = document.getElementById("transferConfirmBtn");
+
+      /** @type {"whole"|"split"|null} */
+      let transferMode = null;
+      /** @type {Array<{product_id:number,name:string,quantity:number,move_qty:number}>} */
+      let splitDraft = [];
+
+      // Owner change UI
+      const ownerModalEl = document.getElementById("ownerModal");
+      const ownerModal = new bootstrap.Modal(ownerModalEl);
+      const ownerSelect = document.getElementById("ownerSelect");
+      const ownerError = document.getElementById("ownerError");
+      const ownerSaveBtn = document.getElementById("ownerSaveBtn");
+
+      const ownerMgrPinModalEl = document.getElementById("ownerMgrPinModal");
+      const ownerMgrPinModal = new bootstrap.Modal(ownerMgrPinModalEl);
+      const ownerMgrPinDots = document.getElementById("ownerMgrPinDots");
+      const ownerMgrPinError = document.getElementById("ownerMgrPinError");
+      const ownerMgrAuthorizeBtn = document.getElementById("ownerMgrAuthorizeBtn");
+      let ownerMgrPin = "";
+      /** @type {number|null} */
+      let pendingOwnerId = null;
+
+      // Tip authorization (non-managers require manager PIN)
+      let tipManagerPin = "";
+      /** @type {"owner"|"tip"|"checkout_account"|null} */
+      let pendingMgrAuthAction = null;
+
+      /** @type {Array<{id:number,name:string,role:string}>} */
+      let staffList = [];
+
+      const temperatureModalEl = document.getElementById("temperatureModal");
+      function showTemperatureModal() {
+        if (!temperatureModalEl) return;
+        bootstrap.Modal.getOrCreateInstance(temperatureModalEl, {
+          backdrop: "static",
+          keyboard: false,
+        }).show();
+      }
+      function hideTemperatureModal() {
+        if (!temperatureModalEl) return;
+        bootstrap.Modal.getInstance(temperatureModalEl)?.hide();
+      }
+      const temperatureModalTitle = document.getElementById("temperatureModalTitle");
+      const temperatureModalProduct = document.getElementById("temperatureModalProduct");
+      const temperatureOptionsGrid = document.getElementById("temperatureOptionsGrid");
+      /** @type {any|null} */
+      let pendingTempProduct = null;
+      /** @type {Record<number, {id:number,name:string,options:Array<{id:number,label:string,sort_order:number}>}>} */
+      let prepGroupById = {};
+
+      /**
+       * Frontend cart state (no backend calls).
+       * Each item:
+       * { product_id, name, price, quantity, subtotal, temperature? }
+       * @type {Array<{product_id:number,name:string,price:number,quantity:number,subtotal:number,temperature?:string|null}>}
+       */
+      let cart = [];
+
+      /** @type {any[]} */
+      let products = [];
+      /** @type {any[]} */
+      let categories = [];
+      /** @type {number|null} */
+      let selectedCategoryId = null;
+
+      let paxCount = 1;
+      let paxDraft = "1";
+
+      function getAnyToken() {
+        return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+      }
+      function getStaffTokenOrRedirect() {
+        const staff = localStorage.getItem("staff_token");
+        if (!staff) {
+          // Table ownership/permissions require staff login.
+          const ret = encodeURIComponent(window.location.pathname + window.location.search);
+          window.location.assign(`/staff/login?reason=login_required&return=${ret}`);
+          return null;
+        }
+        return staff;
+      }
+
+      function setPaxUI(value) {
+        paxCount = Math.max(1, Number.parseInt(String(value || "1"), 10) || 1);
+        paxValue.textContent = String(paxCount);
+      }
+
+      async function savePaxCount() {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch(`/api/tables/${TABLE_ID}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ pax_count: paxCount }),
+          });
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+          }
+        } catch (e) {
+          // ignore network errors; UI already updated locally
+        }
+      }
+
+      function openPaxModal() {
+        paxModalError.textContent = "";
+        paxModalError.classList.add("d-none");
+        paxDraft = String(paxCount);
+        paxDraftDisplay.textContent = paxDraft;
+        paxModal.show();
+      }
+
+      function setPaxDraft(next) {
+        paxDraft = String(next || "").replace(/[^\d]/g, "");
+        if (paxDraft.length > 3) paxDraft = paxDraft.slice(0, 3);
+        paxDraftDisplay.textContent = paxDraft || "0";
+      }
+
+      /** @type {((n:number)=>void)|null} */
+      let moneyOnCommit = null;
+
+      function openMoneyNumpad(targetInput, options) {
+        const opts = options || {};
+        moneyTargetInput = targetInput || null;
+        moneyOnCommit = typeof opts.onCommit === "function" ? opts.onCommit : null;
+        moneyPrefixOverride = typeof opts.prefix === "string" ? opts.prefix : null;
+
+        moneyNumpadError.textContent = "";
+        moneyNumpadError.classList.add("d-none");
+
+        const current = moneyTargetInput ? String(moneyTargetInput.value || "").trim() : "";
+        moneyDraft = current ? current : "0";
+        renderMoneyDraft();
+
+        if (moneyNumpadTitleEl) moneyNumpadTitleEl.textContent = typeof opts.title === "string" ? opts.title : "Enter amount";
+        document.querySelectorAll(".currencyPrefix").forEach((el) => (el.textContent = moneyPrefixOverride || getCurrencySymbol()));
+
+        // Avoid stacked modals on mobile: hide checkout first, then show numpad.
+        const checkoutVisible =
+          checkoutModalEl.classList.contains("show") ||
+          (window.getComputedStyle ? window.getComputedStyle(checkoutModalEl).display !== "none" : false);
+
+        // If the numpad was opened from checkout inputs, return to checkout afterwards by default.
+        returnToCheckoutAfterNumpad = typeof opts.returnToCheckout === "boolean" ? opts.returnToCheckout : true;
+
+        if (checkoutVisible) {
+          pendingShowNumpad = true;
+          checkoutModal.hide();
+          return;
+        }
+        moneyNumpadModal.show();
+      }
+
+      function renderMoneyDraft() {
+        const n = parseMoneyInput(moneyDraft);
+        moneyNumpadDisplay.textContent = n == null ? "0.00" : formatMoney(n);
+      }
+
+      function setMoneyDraft(next) {
+        let s = String(next || "");
+        s = s.replace(/[^\d.]/g, "");
+        // allow only one dot
+        const firstDot = s.indexOf(".");
+        if (firstDot !== -1) {
+          s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replaceAll(".", "");
+        }
+        // limit decimals to 2 places
+        if (firstDot !== -1) {
+          const intPart = s.slice(0, firstDot);
+          let decPart = s.slice(firstDot + 1);
+          if (decPart.length > 2) decPart = decPart.slice(0, 2);
+          s = intPart + "." + decPart;
+        }
+        // prevent huge length
+        if (s.length > 10) s = s.slice(0, 10);
+        moneyDraft = s || "0";
+        renderMoneyDraft();
+      }
+
+      function commitMoneyDraft() {
+        const n = parseMoneyInput(moneyDraft);
+        if (n == null || n < 0) {
+          moneyNumpadError.textContent = "Enter a valid amount.";
+          moneyNumpadError.classList.remove("d-none");
+          return;
+        }
+        if (moneyTargetInput) moneyTargetInput.value = formatMoney(n);
+        if (moneyOnCommit) {
+          try {
+            moneyOnCommit(n);
+          } catch (e) {
+            // ignore
+          }
+          moneyOnCommit = null;
+        }
+        moneyNumpadModal.hide();
+        updatePaymentUI();
+        const v = validateCheckoutForConfirm();
+        confirmSaleBtn.disabled = !v.valid;
+      }
+
+      function commitPaxDraft() {
+        const n = Number.parseInt(paxDraft || "0", 10);
+        if (!Number.isFinite(n) || n <= 0) {
+          paxModalError.textContent = "Pax must be at least 1.";
+          paxModalError.classList.remove("d-none");
+          return;
+        }
+        setPaxUI(n);
+        paxModal.hide();
+        savePaxCount();
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function getStaffRole() {
+        return (localStorage.getItem("staff_role") || "").trim().toLowerCase();
+      }
+      function isManager() {
+        return getStaffRole() === "manager";
+      }
+      function show(el, msg) {
+        el.textContent = msg;
+        el.classList.remove("d-none");
+      }
+      function hide(el) {
+        el.textContent = "";
+        el.classList.add("d-none");
+      }
+
+      function renderAccountList() {
+        accountListEl.innerHTML = "";
+        accountSelectEl.innerHTML = '<option value="">Select account…</option>';
+        const has = customerAccounts.length > 0;
+        accountListEmptyEl.classList.toggle("d-none", has);
+        accountListEl.classList.toggle("d-none", !has);
+        if (!has) {
+          selectedAccountId = null;
+          return;
+        }
+        for (const a of customerAccounts) {
+          const opt = document.createElement("option");
+          opt.value = String(a.id);
+          opt.textContent = a.name || "Account";
+          accountSelectEl.appendChild(opt);
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className =
+            "list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2" +
+            (selectedAccountId === a.id ? " active" : "");
+          btn.setAttribute("data-account-id", String(a.id));
+          const contact = [a.phone, a.email].filter(Boolean).join(" · ");
+          btn.innerHTML = `
+            <div class="text-start">
+              <div class="fw-semibold">${escapeHtml(a.name || "Account")}</div>
+              ${contact ? `<div class="text-body-secondary small">${escapeHtml(contact)}</div>` : ""}
+            </div>
+            <div class="text-end small">
+              <div class="text-body-secondary">Owing</div>
+              <div class="fw-semibold">${getCurrencySymbol()}${escapeHtml(a.balance || "0.00")}</div>
+            </div>`;
+          btn.addEventListener("click", () => {
+            selectedAccountId = a.id;
+            accountSelectEl.value = String(a.id);
+            renderAccountList();
+            renderCheckoutModal();
+          });
+          accountListEl.appendChild(btn);
+        }
+        if (selectedAccountId != null) {
+          accountSelectEl.value = String(selectedAccountId);
+        }
+      }
+
+      async function loadCustomerAccounts() {
+        const token = getAnyToken();
+        if (!token) return;
+        selectedAccountId = null;
+        try {
+          const res = await fetch("/api/accounts?active=1", { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json().catch(() => []);
+          customerAccounts = res.ok && Array.isArray(data) ? data : [];
+          if (!res.ok) customerAccounts = [];
+        } catch (e) {
+          customerAccounts = [];
+        }
+        renderAccountList();
+      }
+
+      async function loadStaffList() {
+        const token = getAnyToken();
+        if (!token) return;
+        try {
+          const res = await fetch("/api/staff", { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !Array.isArray(data)) return;
+          staffList = data;
+        } catch (e) {
+          staffList = [];
+        }
+      }
+
+      function renderOwnerSelect() {
+        ownerSelect.innerHTML = "";
+        for (const s of staffList) {
+          const opt = document.createElement("option");
+          opt.value = String(s.id);
+          opt.textContent = `${s.name} (${s.role})`;
+          if (openedByStaffName && s.name === openedByStaffName) opt.selected = true;
+          ownerSelect.appendChild(opt);
+        }
+      }
+
+      function updateOwnerMgrPinUI() {
+        const size = ownerMgrPin.length >= 5 ? 5 : 4;
+        const slots = [];
+        for (let i = 0; i < size; i++) slots.push(i < ownerMgrPin.length ? "•" : "_");
+        ownerMgrPinDots.textContent = slots.join(" ");
+        ownerMgrAuthorizeBtn.disabled = !(ownerMgrPin.length === 4 || ownerMgrPin.length === 5);
+      }
+
+      function openOwnerMgrPin() {
+        ownerMgrPin = "";
+        hide(ownerMgrPinError);
+        updateOwnerMgrPinUI();
+        const titleEl = ownerMgrPinModalEl?.querySelector(".modal-title");
+        if (titleEl) {
+          if (pendingMgrAuthAction === "remove_item") {
+            titleEl.textContent = "Manager authorization to remove item";
+          } else if (pendingMgrAuthAction === "tip") {
+            titleEl.textContent = "Manager authorization for tip";
+          } else {
+            titleEl.textContent = "Manager PIN required";
+          }
+        }
+        ownerMgrPinModal.show();
+      }
+
+      function getSaveManagerPin() {
+        if (isManager()) return "";
+        return removeAuthPin || tipManagerPin || "";
+      }
+
+      function openTipWithAuthorization() {
+        if (isManager()) return openTipModal();
+        pendingMgrAuthAction = "tip";
+        openOwnerMgrPin();
+      }
+
+      async function fetchOpenTables() {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return [];
+        try {
+          const res = await fetch("/api/tables", { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json().catch(() => []);
+          if (!res.ok || !Array.isArray(data)) return [];
+          return data;
+        } catch (e) {
+          return [];
+        }
+      }
+
+      async function openTransferModal() {
+        if (transferModalError) hide(transferModalError);
+        transferMode = null;
+        splitDraft = [];
+        transferModal.show();
+      }
+
+      function renderTransferTargets(tables) {
+        if (!transferTargetSelect) return;
+        transferTargetSelect.innerHTML = "";
+        for (const t of tables) {
+          if (!t || typeof t.id !== "number") continue;
+          if (t.id === TABLE_ID) continue;
+          const opt = document.createElement("option");
+          opt.value = String(t.id);
+          opt.textContent = `Table ${t.table_number}`;
+          transferTargetSelect.appendChild(opt);
+        }
+      }
+
+      function renderSplitDraft() {
+        if (!transferItemsList) return;
+        transferItemsList.innerHTML = splitDraft
+          .map((it) => {
+            const maxQ = Math.max(0, Number.parseInt(String(it.quantity), 10) || 0);
+            const mv = Math.max(0, Math.min(maxQ, Number.parseInt(String(it.move_qty), 10) || 0));
+            const selected = mv > 0;
+            return `
+              <button
+                type="button"
+                class="list-group-item list-group-item-action px-0 transfer-split-item ${selected ? "active" : ""}"
+                data-id="${it.product_id}"
+              >
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="text-truncate">
+                    <div class="fw-semibold">${escapeHtml(it.name || "Item")}</div>
+                    <div class="text-body-secondary small">Available: ${maxQ}${maxQ > 1 ? " • Tap to choose qty" : " • Tap to toggle"}</div>
+                  </div>
+                  <div class="text-end">
+                    ${mv > 0 ? `<span class="badge text-bg-light">x${mv}</span>` : ""}
+                  </div>
+                </div>
+              </button>
+            `;
+          })
+          .join("");
+      }
+
+      async function openTransferDetails(mode) {
+        if (transferDetailsError) hide(transferDetailsError);
+        transferMode = mode;
+        if (transferDetailsTitleEl) transferDetailsTitleEl.textContent = mode === "whole" ? "Transfer table" : "Split table";
+
+        const tables = await fetchOpenTables();
+        renderTransferTargets(tables);
+
+        const hasTargets = transferTargetSelect && transferTargetSelect.options && transferTargetSelect.options.length > 0;
+        if (transferConfirmBtn) transferConfirmBtn.disabled = !hasTargets;
+        if (!hasTargets) {
+          if (transferDetailsError) show(transferDetailsError, "No other open tables available to transfer to.");
+        }
+
+        if (transferItemsWrap) {
+          transferItemsWrap.classList.toggle("d-none", mode !== "split");
+        }
+        if (mode === "split") {
+          splitDraft = cart.map((c) => ({
+            product_id: c.product_id,
+            name: c.name,
+            quantity: c.quantity,
+            move_qty: 0,
+          }));
+          renderSplitDraft();
+        }
+
+        transferDetailsModal.show();
+      }
+
+      function buildSplitTransferPayload() {
+        const items = [];
+        for (const it of splitDraft) {
+          const q = Number.parseInt(String(it.move_qty), 10) || 0;
+          if (q > 0) items.push({ product_id: it.product_id, quantity: q });
+        }
+        return items;
+      }
+
+      async function confirmTransfer() {
+        if (transferDetailsError) hide(transferDetailsError);
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        const targetId = transferTargetSelect ? Number.parseInt(String(transferTargetSelect.value || ""), 10) : NaN;
+        if (!Number.isFinite(targetId) || targetId <= 0) {
+          if (transferDetailsError) show(transferDetailsError, "Select a valid target table.");
+          return;
+        }
+        if (transferMode === "split") {
+          const items = buildSplitTransferPayload();
+          if (!items.length) {
+            if (transferDetailsError) show(transferDetailsError, "Select at least one item quantity to move.");
+            return;
+          }
+        }
+
+        if (transferConfirmBtn) {
+          transferConfirmBtn.disabled = true;
+          transferConfirmBtn.textContent = "Transferring…";
+        }
+
+        try {
+          const body =
+            transferMode === "whole"
+              ? { mode: "whole", target_table_id: targetId }
+              : { mode: "split", target_table_id: targetId, items: buildSplitTransferPayload() };
+
+          const res = await fetch(`/api/tables/${TABLE_ID}/order/transfer`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+          if (!res.ok) {
+            const msg = data && data.error ? `Transfer failed: ${data.error}` : "Transfer failed.";
+            if (transferDetailsError) show(transferDetailsError, msg);
+            return;
+          }
+
+          // Refresh current table from source order returned by backend.
+          const src = data && data.source ? data.source : null;
+          if (src && Array.isArray(src.items)) {
+            cart = [];
+            for (const it of src.items) {
+              if (!it || typeof it.product_id !== "number" || typeof it.quantity !== "number") continue;
+              cart.push(cartItemFromOrderLine(it));
+            }
+          } else {
+            // fallback: reload
+            await loadExistingOrder();
+          }
+
+          // Tip could have moved (whole transfer); reload tip from src response if present.
+          try {
+            const t = src && src.tip ? src.tip : null;
+            const mode = t && t.mode ? String(t.mode) : "none";
+            if (mode === "percent") {
+              tipMode = "percent";
+              tipPercent = t && t.percent != null ? Number.parseFloat(String(t.percent)) : null;
+              tipFixedAmount = null;
+            } else if (mode === "amount") {
+              tipMode = "amount";
+              tipFixedAmount = t && t.amount != null ? Number.parseFloat(String(t.amount)) : null;
+              tipPercent = null;
+            } else {
+              tipMode = "none";
+              tipPercent = null;
+              tipFixedAmount = null;
+            }
+          } catch (e) {
+            tipMode = "none";
+            tipPercent = null;
+            tipFixedAmount = null;
+          }
+
+          renderCart();
+          transferDetailsModal.hide();
+          transferModal.hide();
+        } catch (e) {
+          if (transferDetailsError) show(transferDetailsError, "Network error. Please try again.");
+        } finally {
+          if (transferConfirmBtn) {
+            transferConfirmBtn.disabled = false;
+            transferConfirmBtn.textContent = "Transfer";
+          }
+        }
+      }
+
+      async function applyOwnerChange(managerPin) {
+        hide(ownerError);
+        const token = getStaffTokenOrRedirect();
+        if (!token || pendingOwnerId == null) return;
+        ownerSaveBtn.disabled = true;
+        ownerSaveBtn.textContent = "Saving…";
+        try {
+          const res = await fetch(`/api/tables/${TABLE_ID}/owner`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ opened_by_staff_id: pendingOwnerId, manager_pin: managerPin || "" }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            show(ownerError, data && data.error ? `Failed: ${data.error}` : "Failed to change owner.");
+            return;
+          }
+          // Update UI from response
+          openedByStaffName = data && data.opened_by_staff && data.opened_by_staff.name ? String(data.opened_by_staff.name) : "";
+          if (tableOwnerNameEl) tableOwnerNameEl.textContent = openedByStaffName || "—";
+          ownerModal.hide();
+          ownerMgrPinModal.hide();
+        } catch (e) {
+          show(ownerError, "Network error.");
+        } finally {
+          ownerSaveBtn.disabled = false;
+          ownerSaveBtn.textContent = "Save";
+        }
+      }
+
+      async function loadCategories() {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch("/api/categories", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !Array.isArray(data)) {
+            categories = [];
+            renderCategories();
+            return;
+          }
+          categories = data;
+          renderCategories();
+        } catch (e) {
+          categories = [];
+          renderCategories();
+        }
+      }
+
+      function moneyToNumber(value) {
+        if (value == null) return 0;
+        const n = Number.parseFloat(String(value));
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function formatMoney(n) {
+        return n.toFixed(2);
+      }
+
+      function getCurrencySymbol() {
+        const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+        if (c === "USD") return "$";
+        if (c === "GBP") return "£";
+        return "R";
+      }
+
+      // (legacy) buildPrintReceipt removed: printing now uses the Receipt modal.
+
+      async function loadCurrencySetting() {
+        const staff = localStorage.getItem("staff_token");
+        if (staff) {
+          try {
+            const res = await fetch("/api/settings", { headers: { Authorization: `Bearer ${staff}` } });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.currency) localStorage.setItem("currency", data.currency);
+          } catch {}
+        }
+        const cur = getCurrencySymbol();
+        currencySymbolEl.textContent = cur;
+        document.querySelectorAll(".currencyPrefix").forEach((el) => (el.textContent = cur));
+      }
+
+      function recalcLine(item) {
+        const qty = Math.max(1, Number.parseInt(String(item.quantity || 1), 10) || 1);
+        const price = moneyToNumber(item.price);
+        item.quantity = qty;
+        item.price = price;
+        item.subtotal = price * qty;
+      }
+
+      function clearMessages() {
+        saveSuccess.textContent = "";
+        saveSuccess.classList.add("d-none");
+        saveError.textContent = "";
+        saveError.classList.add("d-none");
+      }
+
+      function setProductsError(message) {
+        productsAlert.textContent = message;
+        productsAlert.classList.remove("d-none");
+      }
+
+      function clearProductsError() {
+        productsAlert.textContent = "";
+        productsAlert.classList.add("d-none");
+      }
+
+      function renderProducts() {
+        productsGrid.innerHTML = "";
+        const filtered = products.filter((p) => {
+          if (selectedCategoryId == null) return true;
+          return p.category && p.category.id === selectedCategoryId;
+        });
+
+        for (const p of filtered) {
+          const col = document.createElement("div");
+          col.className = "col-6 col-sm-4 col-md-3";
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const categoryName = p.category && p.category.name ? String(p.category.name) : "";
+          const color = getCategoryColor(categoryName);
+          const textClass = color === "warning" ? "text-dark" : "text-white";
+          const btnColorClass = color === "orange" ? "btn-orange" : `btn-${color}`;
+          btn.className = `btn ${btnColorClass} ${textClass} w-100 h-100 d-flex align-items-center justify-content-center text-center`;
+          btn.style.minHeight = "84px";
+          btn.innerHTML = `
+            <div class="fw-semibold" style="font-size: calc(1rem + 4px)">${escapeHtml(p.name || "Unnamed")}</div>
+          `;
+          btn.addEventListener("click", () => addToCart(p.id));
+
+          col.appendChild(btn);
+          productsGrid.appendChild(col);
+        }
+      }
+
+      function renderCategories() {
+        categoriesPills.innerHTML = "";
+
+        const makePill = (label, categoryId, color) => {
+          const li = document.createElement("li");
+          li.className = "nav-item";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const isActive = selectedCategoryId === categoryId;
+          const textClass = color === "warning" ? "text-dark" : "text-white";
+          const btnColorClass = color === "orange" ? "btn-orange" : `btn-${color}`;
+          btn.className = `btn btn-lg px-4 py-3 ${btnColorClass} ${textClass} ${
+            isActive ? "border border-3 border-dark shadow-sm" : ""
+          }`;
+          btn.textContent = label;
+          btn.addEventListener("click", () => {
+            selectedCategoryId = categoryId;
+            renderCategories();
+            renderProducts();
+          });
+          li.appendChild(btn);
+          return li;
+        };
+
+        categoriesPills.appendChild(makePill("All", null, "secondary"));
+        for (const c of categories) {
+          categoriesPills.appendChild(makePill(c.name, c.id, getCategoryColor(c.name)));
+        }
+
+        categoriesWrap.classList.toggle("d-none", categories.length === 0);
+      }
+
+      function getCategoryColor(name) {
+        const n = String(name || "").trim().toLowerCase();
+        if (n === "sides") return "orange";
+        if (n === "soft drinks") return "info";
+        if (n === "starters") return "success";
+        if (n === "mains") return "primary";
+        if (n === "desserts") return "danger";
+        if (n === "spirits") return "dark";
+        if (n === "red wine") return "danger";
+        if (n === "white wine") return "warning";
+        if (n === "liqueurs") return "secondary";
+        if (n === "extras") return "secondary";
+        return "secondary";
+      }
+
+      function indexPrepGroups(groups) {
+        prepGroupById = {};
+        if (!Array.isArray(groups)) return;
+        for (const g of groups) {
+          if (g && typeof g.id === "number") prepGroupById[g.id] = g;
+        }
+      }
+
+      function resolvePrepGroup(product) {
+        if (!product) return null;
+        const embedded = product.temperature_group;
+        if (embedded && Array.isArray(embedded.options) && embedded.options.length) {
+          return embedded;
+        }
+        const gid = product.temperature_group_id;
+        if (gid != null && prepGroupById[gid]) {
+          return prepGroupById[gid];
+        }
+        return null;
+      }
+
+      async function loadPrepGroups() {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+        try {
+          const res = await fetch("/api/temperature-groups", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json().catch(() => []);
+          if (res.ok && Array.isArray(data)) {
+            indexPrepGroups(data);
+            for (const p of products) {
+              const gid = p.temperature_group_id;
+              if (gid != null && prepGroupById[gid] && !p.temperature_group) {
+                p.temperature_group = prepGroupById[gid];
+              }
+            }
+          }
+        } catch (e) {
+          /* non-fatal */
+        }
+      }
+
+      async function loadProducts() {
+        clearProductsError();
+        productsSkeleton.classList.remove("d-none");
+        productsGrid.classList.add("d-none");
+
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          await loadPrepGroups();
+          const res = await fetch("/api/products", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            setProductsError("Failed to load products.");
+            return;
+          }
+          if (!Array.isArray(data)) {
+            setProductsError("Unexpected products response.");
+            return;
+          }
+          products = data;
+          for (const p of products) {
+            const gid = p.temperature_group_id;
+            if (gid != null && prepGroupById[gid] && (!p.temperature_group || !p.temperature_group.options?.length)) {
+              p.temperature_group = prepGroupById[gid];
+            }
+          }
+          renderProducts();
+          productsSkeleton.classList.add("d-none");
+          productsGrid.classList.remove("d-none");
+        } catch (e) {
+          setProductsError("Network error while loading products.");
+        } finally {
+          productsSkeleton.classList.add("d-none");
+        }
+      }
+
+      function findCartLine(productId, temperature) {
+        const temp = temperature || "";
+        return cart.findIndex((it) => it.product_id === productId && (it.temperature || "") === temp);
+      }
+
+      function openTemperatureModal(product, group) {
+        if (!temperatureModalEl || !product) return;
+        group = group || resolvePrepGroup(product);
+        const opts = group && Array.isArray(group.options) ? group.options : [];
+        if (!opts.length) {
+          finalizeAddToCart(product, null);
+          return;
+        }
+        pendingTempProduct = product;
+        if (temperatureModalTitle) {
+          temperatureModalTitle.textContent = group.name ? `${group.name}` : "Cooking instruction";
+        }
+        if (temperatureModalProduct) {
+          temperatureModalProduct.textContent = product.name ? String(product.name) : "";
+        }
+        if (temperatureOptionsGrid) {
+          temperatureOptionsGrid.innerHTML = "";
+          for (const o of opts) {
+            const col = document.createElement("div");
+            col.className = "col-6 col-sm-4";
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-outline-primary w-100 py-3";
+            btn.textContent = o.label;
+            btn.addEventListener("click", () => {
+              hideTemperatureModal();
+              finalizeAddToCart(pendingTempProduct, o.label);
+              pendingTempProduct = null;
+            });
+            col.appendChild(btn);
+            temperatureOptionsGrid.appendChild(col);
+          }
+        }
+        showTemperatureModal();
+      }
+
+      function finalizeAddToCart(product, temperature) {
+        if (!product) return;
+        const productId = product.id;
+        const temp = temperature ? String(temperature) : null;
+        const idx = findCartLine(productId, temp);
+        if (idx !== -1) {
+          cart[idx].quantity += 1;
+          recalcLine(cart[idx]);
+          renderCart();
+          return;
+        }
+        const item = {
+          product_id: productId,
+          name: String(product.name || "Unnamed"),
+          price: moneyToNumber(product.price),
+          quantity: 1,
+          subtotal: 0,
+          temperature: temp,
+        };
+        recalcLine(item);
+        cart = cart.concat(item);
+        renderCart();
+      }
+
+      async function addToCart(productId) {
+        const pid = Number(productId);
+        const product = products.find((p) => Number(p.id) === pid);
+        if (!product) return;
+
+        let group = resolvePrepGroup(product);
+        if (!group && product.temperature_group_id) {
+          await loadPrepGroups();
+          const gid = product.temperature_group_id;
+          if (gid != null && prepGroupById[gid]) {
+            product.temperature_group = prepGroupById[gid];
+            group = prepGroupById[gid];
+          }
+        }
+
+        if (group && Array.isArray(group.options) && group.options.length) {
+          openTemperatureModal(product, group);
+          return;
+        }
+        finalizeAddToCart(product, null);
+      }
+
+      function incrementItem(productId, temperature) {
+        const idx = findCartLine(productId, temperature);
+        if (idx === -1) return;
+        cart[idx].quantity += 1;
+        recalcLine(cart[idx]);
+        renderCart();
+      }
+
+      function decrementItem(productId, temperature) {
+        const idx = findCartLine(productId, temperature);
+        if (idx === -1) return;
+        cart[idx].quantity = Math.max(1, cart[idx].quantity - 1);
+        recalcLine(cart[idx]);
+        renderCart();
+      }
+
+      function performRemoveItem(productId, temperature) {
+        const temp = temperature || "";
+        const next = cart.filter((it) => !(it.product_id === productId && (it.temperature || "") === temp));
+        if (next.length === cart.length) return;
+        cart = next;
+        committedLineKeys.delete(cartLineKey(productId, temp));
+        renderCart();
+      }
+
+      async function ensureOrderStateLoaded() {
+        if (orderStateLoaded) return;
+        await loadExistingOrder();
+      }
+
+      async function removeItem(productId, temperature) {
+        await ensureOrderStateLoaded();
+        if (lineRequiresRemoveAuth(productId, temperature)) {
+          pendingRemove = { productId, temperature: temperature || "" };
+          pendingMgrAuthAction = "remove_item";
+          openOwnerMgrPin();
+          return;
+        }
+        performRemoveItem(productId, temperature);
+      }
+
+      function computeSubtotal() {
+        return cart.reduce((sum, it) => sum + moneyToNumber(it.subtotal), 0);
+      }
+
+      function computeTipAmount(subtotal) {
+        const base = Number.isFinite(subtotal) ? subtotal : 0;
+        if (tipMode === "percent") {
+          const p = tipPercent == null ? null : Number(tipPercent);
+          if (p == null || !Number.isFinite(p) || p <= 0) return 0;
+          return Math.max(0, (base * p) / 100);
+        }
+        if (tipMode === "amount") {
+          const a = tipFixedAmount == null ? null : Number(tipFixedAmount);
+          if (a == null || !Number.isFinite(a) || a <= 0) return 0;
+          return Math.max(0, a);
+        }
+        return 0;
+      }
+
+      function computeDue() {
+        const subtotal = computeSubtotal();
+        const tip = computeTipAmount(subtotal);
+        return Math.max(0, subtotal + tip);
+      }
+
+      function renderTipPreview() {
+        if (!tipPreviewSubtotalEl || !tipPreviewTipEl || !tipPreviewTotalEl) return;
+        const subtotal = computeSubtotal();
+        const tip = computeTipAmount(subtotal);
+        tipPreviewSubtotalEl.textContent = formatMoney(subtotal);
+        tipPreviewTipEl.textContent = formatMoney(tip);
+        tipPreviewTotalEl.textContent = formatMoney(subtotal + tip);
+      }
+
+      function openTipModal() {
+        if (tipModalError) {
+          tipModalError.textContent = "";
+          tipModalError.classList.add("d-none");
+        }
+        renderTipPreview();
+        tipModal.show();
+      }
+
+      function computeTotal() {
+        // Keep older code paths working: Total means subtotal + tip.
+        return computeDue();
+      }
+
+      function validateCart() {
+        if (!Array.isArray(cart) || cart.length === 0) {
+          return { valid: false, message: "Your cart is empty. Add at least one item." };
+        }
+        for (let i = 0; i < cart.length; i++) {
+          const it = cart[i];
+          const qty = Number.parseInt(String(it && it.quantity), 10);
+          if (!Number.isFinite(qty) || qty <= 0) {
+            return { valid: false, message: "Invalid quantity in cart. Please adjust items and try again." };
+          }
+          const pid = Number.parseInt(String(it && it.product_id), 10);
+          if (!Number.isFinite(pid) || pid <= 0) {
+            return { valid: false, message: "Invalid product in cart. Please remove the item and try again." };
+          }
+        }
+        return { valid: true, message: "" };
+      }
+
+      function renderCart() {
+        clearMessages();
+        const v = validateCart();
+        const hasItems = cart.length > 0;
+        cartEmpty.classList.toggle("d-none", hasItems);
+        cartList.classList.toggle("d-none", !hasItems);
+        saveBtn.disabled = false;
+        checkoutBtn.disabled = false;
+        printBillBtn.disabled = !hasItems;
+        if (tipBtn) tipBtn.disabled = !hasItems;
+        if (transferBtn) transferBtn.disabled = !hasItems;
+
+        if (currencySymbolTipEl) currencySymbolTipEl.textContent = getCurrencySymbol();
+        if (currencySymbolTotalEl) currencySymbolTotalEl.textContent = getCurrencySymbol();
+
+        if (!hasItems) {
+          cartList.innerHTML = "";
+          if (subtotalAmountEl) subtotalAmountEl.textContent = "0.00";
+          if (tipAmountEl) tipAmountEl.textContent = "0.00";
+          totalAmountEl.textContent = "0.00";
+          return;
+        }
+
+        // Render as one HTML string for speed on mobile.
+        cartList.innerHTML = cart
+          .map((it) => {
+            const price = moneyToNumber(it.price);
+            const lineTotal = moneyToNumber(it.subtotal);
+            const tempAttr = escapeHtml(it.temperature || "");
+            const tempLine = it.temperature
+              ? `<div class="text-body-secondary small">${escapeHtml(it.temperature)}</div>`
+              : "";
+            return `
+              <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="flex-grow-1">
+                    <div class="fw-semibold">${escapeHtml(it.name || "Unnamed")}</div>
+                    ${tempLine}
+                <div class="text-body-secondary small">${getCurrencySymbol()}${formatMoney(price)} each</div>
+                    <button class="btn btn-link btn-sm px-0 text-danger" data-action="remove" data-id="${it.product_id}" data-temp="${tempAttr}">Remove</button>
+                  </div>
+                  <div class="text-end">
+                <div class="fw-semibold">${getCurrencySymbol()}${formatMoney(lineTotal)}</div>
+                    <div class="btn-group btn-group-sm mt-1" role="group" aria-label="Quantity">
+                      <button class="btn btn-outline-secondary" data-action="dec" data-id="${it.product_id}" data-temp="${tempAttr}">-</button>
+                      <button class="btn btn-outline-secondary disabled" tabindex="-1">${it.quantity}</button>
+                      <button class="btn btn-outline-secondary" data-action="inc" data-id="${it.product_id}" data-temp="${tempAttr}">+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        const subtotal = computeSubtotal();
+        const tip = computeTipAmount(subtotal);
+        if (subtotalAmountEl) subtotalAmountEl.textContent = formatMoney(subtotal);
+        if (tipAmountEl) tipAmountEl.textContent = formatMoney(tip);
+        totalAmountEl.textContent = formatMoney(subtotal + tip);
+      }
+
+      function getSelectedPaymentMethod() {
+        const el = document.querySelector('input[name="paymentMethod"]:checked');
+        return el ? el.value : "cash";
+      }
+
+      function parseMoneyInput(raw) {
+        const s = String(raw == null ? "" : raw).trim().replace(",", ".");
+        const n = Number.parseFloat(s);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function updatePaymentUI() {
+        const method = getSelectedPaymentMethod();
+        const isCash = method === "cash";
+        const isAccount = method === "account";
+        cashSectionEl.classList.toggle("d-none", !isCash);
+        cardSectionEl.classList.toggle("d-none", isCash || isAccount);
+        accountSectionEl.classList.toggle("d-none", !isAccount);
+        if (!isAccount) {
+          checkoutAccountManagerPin = "";
+          selectedAccountId = null;
+        } else {
+          renderAccountList();
+          return;
+        }
+
+        if (isCash) {
+          const received = parseMoneyInput(cashReceivedEl.value);
+          const due = computeDue(); // UX-only estimate; backend total used in receipt.
+          const change = received == null ? null : received - due;
+          cashChangeEl.textContent = change == null ? "0.00" : formatMoney(change);
+          return;
+        }
+
+        const charged = parseMoneyInput(cardTipEl.value);
+        const due = computeDue(); // UX-only estimate; backend total used in receipt.
+        const tip = charged == null ? null : charged - due;
+        cardTipDisplayEl.textContent = tip == null ? "0.00" : formatMoney(tip);
+      }
+
+      function isCartEmpty() {
+        return !Array.isArray(cart) || cart.length === 0;
+      }
+
+      function validateCheckoutForConfirm() {
+        if (isCartEmpty()) {
+          return { valid: true, message: "", emptyClose: true };
+        }
+        const v = validateCheckoutInputs();
+        return { ...v, emptyClose: false };
+      }
+
+      function validateCheckoutInputs() {
+        const base = validateCart();
+        if (!base.valid) return base;
+        const method = getSelectedPaymentMethod();
+        if (method === "cash") {
+          const received = parseMoneyInput(cashReceivedEl.value);
+          if (received == null) return { valid: false, message: "Enter cash received." };
+          if (received < 0) return { valid: false, message: "Cash received cannot be negative." };
+          // Prevent obvious mistakes (based on estimated due).
+          if (received + 1e-9 < computeDue()) return { valid: false, message: "Cash received is less than total." };
+        } else if (method === "account") {
+          const acctId = selectedAccountId != null ? selectedAccountId : Number.parseInt(String(accountSelectEl.value || ""), 10);
+          if (!Number.isFinite(acctId) || acctId <= 0) return { valid: false, message: "Select an account holder from the list." };
+          if (customerAccounts.length === 0) return { valid: false, message: "No customer accounts available." };
+        } else {
+          const charged = parseMoneyInput(cardTipEl.value);
+          if (charged == null) return { valid: false, message: "Enter card amount." };
+          if (charged < 0) return { valid: false, message: "Card amount cannot be negative." };
+          if (charged + 1e-9 < computeDue()) return { valid: false, message: "Card amount is less than total." };
+        }
+        return { valid: true, message: "" };
+      }
+
+      function friendlySalesError(code) {
+        const c = String(code || "").trim();
+        if (!c) return "Checkout failed. Please try again.";
+        if (c === "empty_items") return "Your cart is empty. Add at least one item.";
+        if (c === "invalid_payment_method") return "Please select a valid payment method.";
+        if (c === "manager_pin_required") return "Manager PIN is required to charge to an account.";
+        if (c === "invalid_pin") return "Invalid manager PIN.";
+        if (c === "customer_account_id_required") return "Select a customer account.";
+        if (c === "account_not_found") return "Customer account not found.";
+        if (c === "invalid_items") return "Some items are invalid. Please review your cart and try again.";
+        if (c === "product_not_found") return "One or more products are unavailable. Please reload and try again.";
+        return `Checkout failed (${c}). Please try again.`;
+      }
+
+      function renderCheckoutModal() {
+        checkoutErrorEl.textContent = "";
+        checkoutErrorEl.classList.add("d-none");
+
+        const hasItems = cart.length > 0;
+        const v = validateCheckoutForConfirm();
+        checkoutEmptyEl.classList.toggle("d-none", hasItems);
+        checkoutItemsEl.classList.toggle("d-none", !hasItems);
+        if (checkoutPaymentSectionsEl) {
+          checkoutPaymentSectionsEl.classList.toggle("d-none", !hasItems);
+        }
+        confirmSaleBtn.disabled = !v.valid;
+        confirmSaleBtn.textContent = hasItems ? "Pay Bill" : "Close table";
+        updatePaymentUI();
+
+        if (!hasItems) {
+          checkoutItemsEl.innerHTML = "";
+          checkoutTotalEl.textContent = "0.00";
+          return;
+        }
+
+        const cartV = validateCart();
+        if (!cartV.valid) {
+          checkoutItemsEl.innerHTML = "";
+          checkoutTotalEl.textContent = "0.00";
+          checkoutErrorEl.textContent = cartV.message;
+          checkoutErrorEl.classList.remove("d-none");
+          return;
+        }
+
+        checkoutItemsEl.innerHTML = cart
+          .map((it) => {
+            const tempLine = it.temperature
+              ? `<div class="text-body-secondary small">${escapeHtml(it.temperature)}</div>`
+              : "";
+            return `
+              <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between gap-2">
+                  <div class="text-truncate">
+                    <div class="fw-semibold">${escapeHtml(it.name || "Unnamed")}</div>
+                    ${tempLine}
+                    <div class="text-body-secondary small">Qty ${it.quantity}</div>
+                  </div>
+                  <div class="fw-semibold">${getCurrencySymbol()}${formatMoney(moneyToNumber(it.subtotal))}</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+        checkoutTotalEl.textContent = formatMoney(computeDue());
+      }
+
+      async function openCheckout() {
+        clearMessages();
+        checkoutAccountManagerPin = "";
+        selectedAccountId = null;
+        if (!isCartEmpty()) {
+          const v = validateCart();
+          if (!v.valid) {
+            saveError.textContent = v.message;
+            saveError.classList.remove("d-none");
+            return;
+          }
+          await loadCustomerAccounts();
+        }
+        updatePaymentUI();
+        renderCheckoutModal();
+        checkoutModal.show();
+      }
+
+      async function closeEmptyTable() {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        confirmSaleBtn.disabled = true;
+        confirmSaleBtn.textContent = "Closing…";
+
+        try {
+          const closeRes = await fetch(`/api/tables/${TABLE_ID}/order/close`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+          });
+          const closeData = await closeRes.json().catch(() => ({}));
+
+          if (closeRes.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (!closeRes.ok && closeData && closeData.error !== "no_open_order") {
+            checkoutErrorEl.textContent =
+              closeData && closeData.error
+                ? `Failed to close table: ${closeData.error}`
+                : "Failed to close table.";
+            checkoutErrorEl.classList.remove("d-none");
+            return;
+          }
+
+          cart = [];
+          clearCommittedLineKeys();
+          checkoutModal.hide();
+          window.location.assign("/tables/list");
+        } catch (e) {
+          checkoutErrorEl.textContent = "Network error. Please try again.";
+          checkoutErrorEl.classList.remove("d-none");
+        } finally {
+          confirmSaleBtn.disabled = false;
+          confirmSaleBtn.textContent = isCartEmpty() ? "Close table" : "Pay Bill";
+        }
+      }
+
+      function renderReceipt(sale, mode) {
+        receiptMode = mode || "preview";
+        receiptTableNumberEl.textContent = String(TABLE_ID);
+        receiptPaxEl.textContent = String(paxValue.textContent || "—");
+        // Always show who the table belongs to (original opener), not the current viewer.
+        receiptStaffNameEl.textContent = openedByStaffName || "—";
+
+        receiptSaleIdEl.textContent = sale && sale.id != null ? String(sale.id) : "—";
+        receiptCreatedAtEl.textContent = sale && sale.created_at ? String(sale.created_at) : "—";
+        receiptPaymentMethodEl.textContent =
+          sale && sale.payment_method ? String(sale.payment_method).toUpperCase() : receiptMode === "preview" ? "—" : "—";
+        const isCash = sale && sale.payment_method === "cash";
+        receiptCashMetaEl.classList.toggle("d-none", !isCash);
+        receiptCardMetaEl.classList.toggle("d-none", isCash);
+        if (isCash) {
+          const received = sale && sale._cash_received != null ? Number(sale._cash_received) : null;
+          const total = sale && sale.total_amount != null ? Number.parseFloat(String(sale.total_amount)) : null;
+          const change = received != null && total != null ? received - total : null;
+          receiptCashReceivedEl.textContent = received == null ? "0.00" : formatMoney(received);
+          receiptCashChangeEl.textContent = change == null ? "0.00" : formatMoney(change);
+        } else {
+          const charged = sale && sale._card_amount != null ? Number(sale._card_amount) : null;
+          const total = sale && sale.total_amount != null ? Number.parseFloat(String(sale.total_amount)) : null;
+          const tip = charged != null && total != null ? charged - total : null;
+          receiptCardAmountEl.textContent = charged == null ? "0.00" : formatMoney(charged);
+          receiptCardTipEl.textContent = tip == null ? "0.00" : formatMoney(tip);
+        }
+
+        const items = sale && Array.isArray(sale.items) ? sale.items : [];
+        receiptItemsEl.innerHTML = items
+          .map((it) => {
+            const name = it && it.product && it.product.name ? it.product.name : `Product #${it.product_id}`;
+            const qty = it && typeof it.quantity === "number" ? it.quantity : 0;
+            const price = it && it.price_at_time != null ? String(it.price_at_time) : "0.00";
+            const lineTotal = it && it.line_total != null ? String(it.line_total) : null;
+            const tempLine = it && it.temperature
+              ? `<div class="text-body-secondary small">${escapeHtml(it.temperature)}</div>`
+              : "";
+            return `
+              <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="text-truncate">
+                    <div class="fw-semibold">${escapeHtml(name)}</div>
+                    ${tempLine}
+                    <div class="text-body-secondary small">Qty ${qty} • ${getCurrencySymbol()}${escapeHtml(price)} each</div>
+                  </div>
+                  <div class="fw-semibold">${lineTotal != null ? `${getCurrencySymbol()}${escapeHtml(lineTotal)}` : ""}</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        const totalStr = sale && sale.total_amount != null ? String(sale.total_amount) : "0.00";
+        receiptTotalEl.textContent = totalStr;
+
+        const totalN = Number.parseFloat(totalStr);
+        const paidN = receiptMode === "paid" && Number.isFinite(totalN) ? totalN : 0;
+        const owingN = Number.isFinite(totalN) ? Math.max(0, totalN - paidN) : 0;
+
+        receiptPaidRowEl.classList.toggle("d-none", paidN <= 0);
+        receiptPaidEl.textContent = formatMoney(paidN);
+        receiptOwingEl.textContent = formatMoney(owingN);
+      }
+
+      function hasFullSaleDetails(sale) {
+        return !!(sale && sale.id != null && Array.isArray(sale.items) && sale.items.length >= 0 && sale.total_amount != null);
+      }
+
+      async function fetchSaleById(saleId) {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return null;
+        try {
+          const res = await fetch(`/api/sales/${saleId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return null;
+          }
+          if (!res.ok) return null;
+          return data;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function showReceipt(sale) {
+        let s = sale || null;
+        // If POST response is partial, fetch full sale details.
+        if (s && s.id != null && !hasFullSaleDetails(s)) {
+          const fetched = await fetchSaleById(s.id);
+          if (fetched) s = fetched;
+        }
+        renderReceipt(s, "paid");
+        receiptModal.show();
+      }
+
+      function buildPreviewSaleFromCart() {
+        const curItems = cart.map((it) => {
+          const qty = Number.parseInt(String(it && it.quantity), 10) || 0;
+          const price = moneyToNumber(it && it.price);
+          const lineTotal = moneyToNumber(it && it.subtotal);
+          return {
+            product_id: it && it.product_id != null ? it.product_id : null,
+            quantity: qty,
+            price_at_time: formatMoney(price),
+            line_total: formatMoney(lineTotal),
+            temperature: it && it.temperature ? it.temperature : null,
+            product: { name: it && it.name ? it.name : "Item" },
+          };
+        });
+        return {
+          id: null,
+          created_at: new Date().toISOString(),
+          payment_method: null,
+          total_amount: formatMoney(computeDue()),
+          items: curItems,
+        };
+      }
+
+      async function confirmSale() {
+        checkoutErrorEl.textContent = "";
+        checkoutErrorEl.classList.add("d-none");
+        const v = validateCheckoutForConfirm();
+        if (!v.valid) {
+          checkoutErrorEl.textContent = v.message;
+          checkoutErrorEl.classList.remove("d-none");
+          return;
+        }
+
+        if (v.emptyClose) {
+          await closeEmptyTable();
+          return;
+        }
+
+        const payment_method = getSelectedPaymentMethod();
+        if (payment_method === "account" && !isManager() && !checkoutAccountManagerPin) {
+          pendingMgrAuthAction = "checkout_account";
+          openOwnerMgrPin();
+          return;
+        }
+
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        const items = cartToItems();
+
+        const cash_received = payment_method === "cash" ? parseMoneyInput(cashReceivedEl.value) : null;
+        const card_amount = payment_method === "card" ? parseMoneyInput(cardTipEl.value) : null;
+        const customer_account_id =
+          payment_method === "account"
+            ? selectedAccountId != null
+              ? selectedAccountId
+              : Number.parseInt(String(accountSelectEl.value || ""), 10)
+            : null;
+        const manager_pin =
+          payment_method === "account" && !isManager() ? checkoutAccountManagerPin || "" : "";
+
+        confirmSaleBtn.disabled = true;
+        confirmSaleBtn.textContent = "Processing…";
+
+        try {
+          const res = await fetch("/api/sales", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              payment_method,
+              items,
+              customer_account_id,
+              manager_pin: manager_pin || undefined,
+            }),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (!res.ok) {
+            checkoutErrorEl.textContent =
+              (data && data.message) || friendlySalesError(data && data.error);
+            checkoutErrorEl.classList.remove("d-none");
+            checkoutAccountManagerPin = "";
+            return;
+          }
+
+          // Success: trust backend totals/lines for receipt.
+          checkoutAccountManagerPin = "";
+          if (cash_received != null) data._cash_received = cash_received;
+          if (card_amount != null) data._card_amount = card_amount;
+          cart = [];
+          renderCart();
+          checkoutModal.hide();
+          // Close the table so it disappears from "Show Tables".
+          try {
+            const closeRes = await fetch(`/api/tables/${TABLE_ID}/order/close`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                sale_id: data && typeof data.id === "number" ? data.id : null,
+                cash_received,
+                card_amount,
+              }),
+            });
+            if (!closeRes.ok) {
+              const closeData = await closeRes.json().catch(() => ({}));
+              // Sale succeeded, but table closure failed; surface this so the user knows why it won't show in Closed Tables.
+              saveError.textContent =
+                closeData && closeData.error
+                  ? `Sale saved, but table failed to close: ${closeData.error}`
+                  : "Sale saved, but table failed to close.";
+              saveError.classList.remove("d-none");
+            }
+          } catch (e) {
+            saveError.textContent = "Sale saved, but table failed to close due to a network error.";
+            saveError.classList.remove("d-none");
+          }
+          showReceipt(data);
+        } catch (e) {
+          checkoutErrorEl.textContent = "Network error. Please try again.";
+          checkoutErrorEl.classList.remove("d-none");
+        } finally {
+          const cv = validateCheckoutForConfirm();
+          confirmSaleBtn.disabled = !cv.valid;
+          confirmSaleBtn.textContent = isCartEmpty() ? "Close table" : "Pay Bill";
+        }
+      }
+
+      function cartToItems() {
+        return cart.map((it) => ({
+          product_id: it.product_id,
+          quantity: it.quantity,
+          temperature: it.temperature || null,
+        }));
+      }
+
+      function cartItemFromOrderLine(it) {
+        const item = {
+          product_id: it.product_id,
+          name: String((it.product && it.product.name) || "Unnamed"),
+          price: moneyToNumber(it.price_at_time),
+          quantity: Math.max(1, it.quantity),
+          subtotal: 0,
+          temperature: it.temperature != null ? String(it.temperature) : null,
+        };
+        recalcLine(item);
+        return item;
+      }
+
+      async function loadExistingOrder() {
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        try {
+          const res = await fetch(`/api/tables/${TABLE_ID}/order`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+          if (res.status === 404) {
+            clearCommittedLineKeys();
+            orderStateLoaded = true;
+            return;
+          }
+          if (!res.ok) {
+            orderStateLoaded = true;
+            return;
+          }
+          if (!data || !Array.isArray(data.items)) {
+            syncCommittedStateFromOrder(data);
+            orderStateLoaded = true;
+            return;
+          }
+
+          tableHasClosedHistory = !!(data && data.has_closed_history);
+          syncCommittedStateFromOrder(data);
+          openedByStaffName =
+            data && data.opened_by_staff && data.opened_by_staff.name ? String(data.opened_by_staff.name) : "";
+          if (tableOwnerNameEl) tableOwnerNameEl.textContent = openedByStaffName || "—";
+          await loadStaffList();
+          renderOwnerSelect();
+
+          // Best-effort: also populate pax count if present on API response (not currently included),
+          // otherwise leave current input.
+
+          // Seed cart from existing saved order.
+          cart = [];
+          for (const it of data.items) {
+            if (!it || typeof it.product_id !== "number" || typeof it.quantity !== "number") continue;
+            cart.push(cartItemFromOrderLine(it));
+          }
+          renderCart();
+
+          // Restore persisted tip (if present)
+          try {
+            const t = data && data.tip ? data.tip : null;
+            const mode = t && t.mode ? String(t.mode) : "none";
+            if (mode === "percent") {
+              tipMode = "percent";
+              tipPercent = t && t.percent != null ? Number.parseFloat(String(t.percent)) : null;
+              tipFixedAmount = null;
+            } else if (mode === "amount") {
+              tipMode = "amount";
+              tipFixedAmount = t && t.amount != null ? Number.parseFloat(String(t.amount)) : null;
+              tipPercent = null;
+            } else {
+              tipMode = "none";
+              tipPercent = null;
+              tipFixedAmount = null;
+            }
+          } catch (e) {
+            tipMode = "none";
+            tipPercent = null;
+            tipFixedAmount = null;
+          }
+          renderCart();
+        } catch (e) {
+          // ignore
+        } finally {
+          orderStateLoaded = true;
+        }
+      }
+
+      async function commitOrder() {
+        clearMessages();
+        const token = getStaffTokenOrRedirect();
+        if (!token) return;
+
+        const items = cartToItems();
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Committing…";
+
+        try {
+          // Brand-new empty tables: close so they leave the open list. Reopened tables stay open.
+          if (!items.length && !tableHasClosedHistory) {
+            const closeRes = await fetch(`/api/tables/${TABLE_ID}/order/close`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({}),
+            });
+            const closeData = await closeRes.json().catch(() => ({}));
+
+            if (closeRes.status === 401) {
+              localStorage.removeItem("access_token");
+              window.location.assign("/login");
+              return;
+            }
+
+            if (!closeRes.ok) {
+              saveError.textContent =
+                closeData && closeData.error ? `Commit failed: ${closeData.error}` : "Commit failed.";
+              saveError.classList.remove("d-none");
+              return;
+            }
+
+            window.location.assign("/tables/list");
+            return;
+          }
+
+          // Save items first (backend recalculates prices); keeps table open after commit
+          const saveRes = await fetch(`/api/tables/${TABLE_ID}/order`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              items,
+              tip: {
+                mode: tipMode,
+                percent: tipMode === "percent" ? tipPercent : null,
+                amount: tipMode === "amount" ? tipFixedAmount : null,
+              },
+              manager_pin: getSaveManagerPin(),
+            }),
+          });
+          const saveData = await saveRes.json().catch(() => ({}));
+
+          if (saveRes.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (!saveRes.ok) {
+            if (
+              saveData &&
+              (saveData.error === "manager_pin_required" || saveData.error === "invalid_pin")
+            ) {
+              pendingMgrAuthAction = "remove_item";
+              openOwnerMgrPin();
+              saveError.textContent =
+                saveData.error === "invalid_pin"
+                  ? "Invalid manager PIN."
+                  : "Manager authorization required to remove items from a committed order.";
+              saveError.classList.remove("d-none");
+              return;
+            }
+            saveError.textContent =
+              saveData && saveData.error ? `Save failed: ${saveData.error}` : "Save failed.";
+            saveError.classList.remove("d-none");
+            return;
+          }
+
+          removeAuthPin = "";
+
+          // Commit sends order to kitchen; table stays open until Pay Bill
+          const commitRes = await fetch(`/api/tables/${TABLE_ID}/order/commit`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          const commitData = await commitRes.json().catch(() => ({}));
+
+          if (commitRes.status === 401) {
+            localStorage.removeItem("access_token");
+            window.location.assign("/login");
+            return;
+          }
+
+          if (!commitRes.ok) {
+            saveError.textContent =
+              commitData && commitData.error ? `Commit failed: ${commitData.error}` : "Commit failed.";
+            saveError.classList.remove("d-none");
+            return;
+          }
+
+          rebuildCommittedLineKeysFromCart();
+
+          // Close automatically: return to tables list
+          window.location.assign("/tables/list");
+        } catch (e) {
+          saveError.textContent = "Network error. Please try again.";
+          saveError.classList.remove("d-none");
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Commit order";
+        }
+      }
+
+      reloadBtn.addEventListener("click", async () => {
+        orderStateLoaded = false;
+        await loadProducts();
+        await loadExistingOrder();
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          orderStateLoaded = false;
+          loadProducts();
+          loadExistingOrder();
+        }
+      });
+      paxBtn.addEventListener("click", openPaxModal);
+      document.querySelectorAll(".pax-key").forEach((btn) => {
+        btn.addEventListener("click", () => setPaxDraft((paxDraft || "") + btn.getAttribute("data-key")));
+      });
+      paxClear.addEventListener("click", () => setPaxDraft(""));
+      paxBack.addEventListener("click", () => setPaxDraft((paxDraft || "").slice(0, -1)));
+      paxDone.addEventListener("click", commitPaxDraft);
+
+      document.querySelectorAll(".money-key").forEach((btn) => {
+        btn.addEventListener("click", () => setMoneyDraft((moneyDraft || "") + btn.getAttribute("data-key")));
+      });
+      moneyClear.addEventListener("click", () => setMoneyDraft(""));
+      moneyBack.addEventListener("click", () => setMoneyDraft((moneyDraft || "").slice(0, -1)));
+      moneyDone.addEventListener("click", commitMoneyDraft);
+      checkoutModalEl.addEventListener("hidden.bs.modal", () => {
+        if (pendingShowNumpad) {
+          pendingShowNumpad = false;
+          moneyNumpadModal.show();
+        }
+      });
+      moneyNumpadModalEl.addEventListener("hidden.bs.modal", () => {
+        moneyPrefixOverride = null;
+        if (moneyNumpadTitleEl) moneyNumpadTitleEl.textContent = "Enter amount";
+        document.querySelectorAll(".currencyPrefix").forEach((el) => (el.textContent = getCurrencySymbol()));
+        // Restore checkout modal after numpad is closed.
+        if (returnToCheckoutAfterNumpad) {
+          returnToCheckoutAfterNumpad = false;
+          checkoutModal.show();
+        }
+      });
+      clearBtn.addEventListener("click", () => {
+        cart = [];
+        renderCart();
+      });
+      saveBtn.addEventListener("click", commitOrder);
+      checkoutBtn.addEventListener("click", openCheckout);
+      printBillBtn.addEventListener("click", () => {
+        if (cart.length === 0) return;
+        const preview = buildPreviewSaleFromCart();
+        renderReceipt(preview, "preview");
+        receiptModal.show();
+      });
+
+      if (tipBtn) tipBtn.addEventListener("click", openTipWithAuthorization);
+
+      if (tipChoosePercentBtn) {
+        tipChoosePercentBtn.addEventListener("click", () => {
+          if (tipModalError) hide(tipModalError);
+          tipModal.hide();
+          openMoneyNumpad(null, {
+            returnToCheckout: false,
+            prefix: "%",
+            title: "Enter tip %",
+            onCommit: (n) => {
+              tipMode = "percent";
+              tipPercent = n;
+              tipFixedAmount = null;
+              renderCart();
+              updatePaymentUI();
+            },
+          });
+        });
+      }
+
+      if (tipChooseAmountBtn) {
+        tipChooseAmountBtn.addEventListener("click", () => {
+          if (tipModalError) hide(tipModalError);
+          tipModal.hide();
+          openMoneyNumpad(null, {
+            returnToCheckout: false,
+            prefix: getCurrencySymbol(),
+            title: "Enter tip amount",
+            onCommit: (n) => {
+              tipMode = "amount";
+              tipFixedAmount = n;
+              tipPercent = null;
+              renderCart();
+              updatePaymentUI();
+            },
+          });
+        });
+      }
+
+      if (transferBtn) transferBtn.addEventListener("click", openTransferModal);
+      if (transferWholeBtn) transferWholeBtn.addEventListener("click", () => openTransferDetails("whole"));
+      if (transferSplitBtn) transferSplitBtn.addEventListener("click", () => openTransferDetails("split"));
+      if (transferConfirmBtn) transferConfirmBtn.addEventListener("click", confirmTransfer);
+
+      if (transferItemsList) {
+        transferItemsList.addEventListener("click", (e) => {
+          const btn = e.target && e.target.closest ? e.target.closest(".transfer-split-item[data-id]") : null;
+          if (!btn) return;
+          const pid = Number.parseInt(btn.getAttribute("data-id"), 10);
+          if (!Number.isFinite(pid)) return;
+          const idx = splitDraft.findIndex((x) => x.product_id === pid);
+          if (idx === -1) return;
+
+          const maxQ = Math.max(0, Number.parseInt(String(splitDraft[idx].quantity), 10) || 0);
+          if (maxQ <= 0) return;
+
+          // Single quantity: tap toggles 0/1
+          if (maxQ === 1) {
+            splitDraft[idx].move_qty = splitDraft[idx].move_qty > 0 ? 0 : 1;
+            renderSplitDraft();
+            return;
+          }
+
+          // Multiple: open keypad to enter qty to move
+          openMoneyNumpad(null, {
+            returnToCheckout: false,
+            prefix: "",
+            title: "Move qty",
+            onCommit: (n) => {
+              const q = Math.max(0, Math.min(maxQ, Math.floor(Number(n) || 0)));
+              splitDraft[idx].move_qty = q;
+              renderSplitDraft();
+            },
+          });
+        });
+      }
+
+      if (tipClearBtn) {
+        tipClearBtn.addEventListener("click", () => {
+          tipMode = "none";
+          tipPercent = null;
+          tipFixedAmount = null;
+          renderTipPreview();
+          renderCart();
+          updatePaymentUI();
+        });
+      }
+      confirmSaleBtn.addEventListener("click", confirmSale);
+      checkoutModalEl.addEventListener("shown.bs.modal", renderCheckoutModal);
+      document.querySelectorAll('input[name="paymentMethod"]').forEach((el) => {
+        el.addEventListener("change", () => {
+          updatePaymentUI();
+          renderCheckoutModal();
+        });
+      });
+      // Native mobile numeric keyboard via inputmode/pattern on money inputs.
+      cashReceivedEl.addEventListener("input", () => {
+        updatePaymentUI();
+        const v = validateCheckoutForConfirm();
+        confirmSaleBtn.disabled = !v.valid;
+      });
+      cardTipEl.addEventListener("input", () => {
+        updatePaymentUI();
+        const v = validateCheckoutForConfirm();
+        confirmSaleBtn.disabled = !v.valid;
+      });
+      closeReceiptBtn.addEventListener("click", () => {
+        receiptModal.hide();
+        if (receiptMode === "paid") window.location.assign("/tables/list");
+      });
+      newSaleBtn.addEventListener("click", () => {
+        // Reset flow for the next sale.
+        cart = [];
+        renderCart();
+        receiptModal.hide();
+        // Best-effort: bring user back to products area on mobile.
+        try {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (e) {
+          window.scrollTo(0, 0);
+        }
+      });
+      printReceiptBtn.addEventListener("click", () => {
+        // Print via a dedicated window to avoid duplicate prints/pages.
+        const cur = getCurrencySymbol();
+        const html = `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Receipt</title>
+    <style>
+      @page { size: 80mm auto; margin: 6mm; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: #000; }
+      .currencyPrefix { font-weight: 700; }
+      hr { border: 0; border-top: 1px solid #000; margin: 10px 0; }
+    </style>
+  </head>
+  <body>
+    ${document.getElementById("receiptPrintArea").innerHTML}
+    <script>
+      // Ensure currency prefix is visible even without Bootstrap.
+      document.querySelectorAll('.currencyPrefix').forEach(el => el.textContent = ${JSON.stringify(cur)});
+      window.focus();
+      window.print();
+      window.close();
+    <\/script>
+  </body>
+</html>`;
+
+        const w = window.open("", "_blank", "noopener,noreferrer,width=400,height=600");
+        if (!w) return;
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+      });
+
+      ownerBtn.addEventListener("click", () => {
+        hide(ownerError);
+        renderOwnerSelect();
+        ownerModal.show();
+      });
+
+      ownerSaveBtn.addEventListener("click", () => {
+        hide(ownerError);
+        const id = Number.parseInt(String(ownerSelect.value || ""), 10);
+        if (!Number.isFinite(id) || id <= 0) {
+          show(ownerError, "Select a valid staff member.");
+          return;
+        }
+        pendingOwnerId = id;
+        if (isManager()) return applyOwnerChange("");
+        pendingMgrAuthAction = "owner";
+        openOwnerMgrPin();
+      });
+
+      document.querySelectorAll(".owner-mgr-key").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (ownerMgrPin.length >= 5) return;
+          ownerMgrPin += btn.getAttribute("data-key");
+          updateOwnerMgrPinUI();
+        });
+      });
+      document.getElementById("ownerMgrClear").addEventListener("click", () => {
+        ownerMgrPin = "";
+        updateOwnerMgrPinUI();
+      });
+      document.getElementById("ownerMgrBack").addEventListener("click", () => {
+        ownerMgrPin = ownerMgrPin.slice(0, -1);
+        updateOwnerMgrPinUI();
+      });
+      ownerMgrAuthorizeBtn.addEventListener("click", () => {
+        if (pendingMgrAuthAction === "owner") {
+          applyOwnerChange(ownerMgrPin);
+          return;
+        }
+        if (pendingMgrAuthAction === "tip") {
+          tipManagerPin = ownerMgrPin;
+          ownerMgrPinModal.hide();
+          openTipModal();
+          return;
+        }
+        if (pendingMgrAuthAction === "checkout_account") {
+          checkoutAccountManagerPin = ownerMgrPin;
+          ownerMgrPin = "";
+          updateOwnerMgrPinUI();
+          ownerMgrPinModal.hide();
+          pendingMgrAuthAction = null;
+          confirmSale();
+          return;
+        }
+        if (pendingMgrAuthAction === "remove_item") {
+          removeAuthPin = ownerMgrPin;
+          ownerMgrPin = "";
+          updateOwnerMgrPinUI();
+          ownerMgrPinModal.hide();
+          pendingMgrAuthAction = null;
+          if (pendingRemove) {
+            performRemoveItem(pendingRemove.productId, pendingRemove.temperature);
+            pendingRemove = null;
+          }
+          return;
+        }
+      });
+
+      ownerMgrPinModalEl?.addEventListener("hidden.bs.modal", () => {
+        if (pendingMgrAuthAction === "remove_item") {
+          pendingRemove = null;
+          pendingMgrAuthAction = null;
+        }
+      });
+
+      // Fast cart interactions via event delegation.
+      cartList.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest("[data-action][data-id]") : null;
+        if (!btn) return;
+        const id = Number.parseInt(btn.getAttribute("data-id"), 10);
+        if (!Number.isFinite(id)) return;
+        const temp = btn.getAttribute("data-temp") || "";
+        const action = btn.getAttribute("data-action");
+        if (action === "inc") incrementItem(id, temp);
+        else if (action === "dec") decrementItem(id, temp);
+        else if (action === "remove") removeItem(id, temp);
+      });
+
+      if (temperatureModalEl) {
+        temperatureModalEl.addEventListener("hidden.bs.modal", () => {
+          pendingTempProduct = null;
+        });
+      }
+
+      async function initTableOrderPage() {
+        getStaffTokenOrRedirect();
+        setPaxUI(1);
+        loadCurrencySetting();
+        renderCart();
+        await Promise.all([loadCategories(), loadProducts(), loadExistingOrder()]);
+      }
+
+      initTableOrderPage();
+    </script>
+{% endblock %}
+

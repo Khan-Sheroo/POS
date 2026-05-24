@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings • POS System</title>
+    <script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = stored || (systemDark ? "dark" : "light");
+        document.documentElement.setAttribute("data-bs-theme", theme);
+      })();
+    </script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body class="bg-body-tertiary">
+    <main class="container py-4">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-1">Settings</h1>
+              <p class="text-body-secondary mb-4">Manager-only for changes.</p>
+
+              <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+              <div id="successBox" class="alert alert-success d-none" role="alert"></div>
+
+              <div class="mb-3">
+                <label class="form-label" for="currency">Currency</label>
+                <select id="currency" class="form-select">
+                  <option value="ZAR">ZAR (R)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="GBP">Pound sterling (£)</option>
+                </select>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button id="saveBtn" class="btn btn-primary btn-lg" type="button">Save</button>
+                <a class="btn btn-outline-secondary" href="/tables/list">Back to POS</a>
+              </div>
+            </div>
+          </div>
+          <p class="text-center text-body-secondary mt-3 mb-0 small">
+            Uses <code>localStorage.staff_token</code> for manager permission.
+          </p>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const currencyEl = document.getElementById("currency");
+      const saveBtn = document.getElementById("saveBtn");
+      const errorBox = document.getElementById("errorBox");
+      const successBox = document.getElementById("successBox");
+
+      function show(el, msg) {
+        el.textContent = msg;
+        el.classList.remove("d-none");
+      }
+      function hide(el) {
+        el.textContent = "";
+        el.classList.add("d-none");
+      }
+
+      function requireTokensOrRedirect() {
+        const company = localStorage.getItem("access_token");
+        if (!company) window.location.assign("/login");
+        const staff = localStorage.getItem("staff_token");
+        if (!staff) window.location.assign("/staff/login");
+        return { company, staff };
+      }
+
+      async function loadSettings() {
+        hide(errorBox);
+        const { staff } = requireTokensOrRedirect();
+        if (!staff) return;
+        try {
+          const res = await fetch("/api/settings", {
+            headers: { Authorization: `Bearer ${staff}` },
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401) return window.location.assign("/login");
+          if (res.status === 403) return window.location.assign("/staff/login");
+          if (!res.ok) return show(errorBox, "Failed to load settings.");
+          currencyEl.value = data.currency || "ZAR";
+          localStorage.setItem("currency", currencyEl.value);
+        } catch (e) {
+          show(errorBox, "Network error.");
+        }
+      }
+
+      async function save() {
+        hide(errorBox);
+        hide(successBox);
+        const { staff } = requireTokensOrRedirect();
+        if (!staff) return;
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving…";
+        try {
+          const res = await fetch("/api/settings", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${staff}` },
+            body: JSON.stringify({ currency: currencyEl.value }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401) return window.location.assign("/login");
+          if (res.status === 403) return show(errorBox, "Manager permission required.");
+          if (!res.ok) return show(errorBox, data && data.error ? data.error : "Save failed.");
+          localStorage.setItem("currency", data.currency);
+          show(successBox, "Saved.");
+        } catch (e) {
+          show(errorBox, "Network error.");
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        }
+      }
+
+      saveBtn.addEventListener("click", save);
+      requireTokensOrRedirect();
+      loadSettings();
+    </script>
+  </body>
+</html>
+

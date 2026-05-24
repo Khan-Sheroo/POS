@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}Categories • POS System{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h4 mb-0">Categories</h1>
+    <div class="d-flex gap-2 flex-wrap">
+      <button id="addBtn" class="btn btn-primary btn-sm" type="button">Add Category</button>
+      <button id="reloadBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload</button>
+    </div>
+  </div>
+
+  <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+  <div id="successBox" class="alert alert-success d-none" role="alert"></div>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="emptyState" class="text-body-secondary">No categories yet.</div>
+      <div class="table-responsive d-none" id="tableWrap">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width: 30%">Name</th>
+              <th>Description</th>
+              <th class="text-end" style="width: 1%">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal fade" id="categoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalTitle">Category</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="modalError" class="alert alert-danger d-none" role="alert"></div>
+
+          <div class="mb-3">
+            <label class="form-label" for="catName">Name</label>
+            <input id="catName" class="form-control" type="text" autocomplete="off" />
+          </div>
+          <div class="mb-0">
+            <label class="form-label" for="catDesc">Description (optional)</label>
+            <textarea id="catDesc" class="form-control" rows="3"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="saveBtn" type="button" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const addBtn = document.getElementById("addBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const errorBox = document.getElementById("errorBox");
+    const successBox = document.getElementById("successBox");
+    const emptyState = document.getElementById("emptyState");
+    const tableWrap = document.getElementById("tableWrap");
+    const tbody = document.getElementById("tbody");
+
+    const categoryModalEl = document.getElementById("categoryModal");
+    const categoryModal = new bootstrap.Modal(categoryModalEl);
+    const modalTitle = document.getElementById("modalTitle");
+    const modalError = document.getElementById("modalError");
+    const catName = document.getElementById("catName");
+    const catDesc = document.getElementById("catDesc");
+    const saveBtn = document.getElementById("saveBtn");
+
+    /** @type {Array<{id:number,name:string,description:string|null,created_at:string}>} */
+    let categories = [];
+    /** @type {number|null} */
+    let editingId = null;
+
+    function getToken() {
+      return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+    }
+
+    function requireTokenOrRedirect() {
+      const token = getToken();
+      if (!token) window.location.assign("/login");
+      return token;
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("d-none");
+    }
+    function clearError() {
+      errorBox.textContent = "";
+      errorBox.classList.add("d-none");
+    }
+    function showSuccess(message) {
+      successBox.textContent = message;
+      successBox.classList.remove("d-none");
+      window.setTimeout(() => successBox.classList.add("d-none"), 2500);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function setModalError(message) {
+      modalError.textContent = message;
+      modalError.classList.remove("d-none");
+    }
+    function clearModalError() {
+      modalError.textContent = "";
+      modalError.classList.add("d-none");
+    }
+
+    function openAdd() {
+      editingId = null;
+      modalTitle.textContent = "Add Category";
+      catName.value = "";
+      catDesc.value = "";
+      clearModalError();
+      categoryModal.show();
+      window.setTimeout(() => catName.focus(), 150);
+    }
+
+    function openEdit(c) {
+      editingId = c.id;
+      modalTitle.textContent = "Edit Category";
+      catName.value = c.name || "";
+      catDesc.value = c.description || "";
+      clearModalError();
+      categoryModal.show();
+      window.setTimeout(() => catName.focus(), 150);
+    }
+
+    function render() {
+      const has = Array.isArray(categories) && categories.length > 0;
+      emptyState.classList.toggle("d-none", has);
+      tableWrap.classList.toggle("d-none", !has);
+      tbody.innerHTML = "";
+      if (!has) return;
+
+      for (const c of categories) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="fw-semibold">${escapeHtml(c.name || "")}</td>
+          <td class="text-body-secondary">${escapeHtml(c.description || "")}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group">
+              <button class="btn btn-outline-primary" data-action="edit" data-id="${c.id}">Edit</button>
+              <button class="btn btn-outline-danger" data-action="delete" data-id="${c.id}">Delete</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadCategories() {
+      clearError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      try {
+        const res = await fetch("/api/categories", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok || !Array.isArray(data)) {
+          showError("Failed to load categories.");
+          categories = [];
+          render();
+          return;
+        }
+        categories = data;
+        render();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      }
+    }
+
+    async function saveCategory() {
+      clearModalError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+
+      const name = (catName.value || "").trim();
+      const descriptionRaw = (catDesc.value || "").trim();
+      const description = descriptionRaw ? descriptionRaw : null;
+
+      if (!name) {
+        setModalError("Name is required.");
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+
+      try {
+        const isEdit = editingId != null;
+        const url = isEdit ? `/api/categories/${editingId}` : "/api/categories";
+        const method = isEdit ? "PUT" : "POST";
+
+        const res = await fetch(url, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name, description }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          if (data && data.error === "category_already_exists") setModalError("A category with that name already exists.");
+          else if (data && data.error === "name_required") setModalError("Name is required.");
+          else setModalError("Save failed. Please try again.");
+          return;
+        }
+
+        categoryModal.hide();
+        showSuccess(isEdit ? "Category updated." : "Category created.");
+        await loadCategories();
+      } catch (e) {
+        setModalError("Network error. Please try again.");
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+      }
+    }
+
+    async function deleteCategory(id) {
+      const c = categories.find((x) => x.id === id);
+      const ok = window.confirm(`Delete category "${c ? c.name : id}"?`);
+      if (!ok) return;
+
+      clearError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+
+      try {
+        const res = await fetch(`/api/categories/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          if (data && data.error === "category_in_use") showError("That category is in use by products. Remove it from products first.");
+          else showError("Delete failed.");
+          return;
+        }
+        showSuccess("Category deleted.");
+        await loadCategories();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      }
+    }
+
+    tbody.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("button[data-action][data-id]") : null;
+      if (!btn) return;
+      const id = Number.parseInt(btn.getAttribute("data-id"), 10);
+      const action = btn.getAttribute("data-action");
+      if (!Number.isFinite(id)) return;
+      if (action === "edit") {
+        const c = categories.find((x) => x.id === id);
+        if (c) openEdit(c);
+      } else if (action === "delete") {
+        deleteCategory(id);
+      }
+    });
+
+    addBtn.addEventListener("click", openAdd);
+    reloadBtn.addEventListener("click", loadCategories);
+    saveBtn.addEventListener("click", saveCategory);
+    catName.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") saveCategory();
+    });
+
+    requireTokenOrRedirect();
+    loadCategories();
+  </script>
+{% endblock %}
+

@@ -1,0 +1,888 @@
+{% extends "base.html" %}
+
+{% block title %}Products • POS System{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h4 mb-0">Products</h1>
+    <div class="d-flex gap-2 flex-wrap">
+      <button id="addBtn" class="btn btn-primary btn-sm" type="button">Add Product</button>
+      <button id="reloadBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload</button>
+    </div>
+  </div>
+
+  <div id="errorBox" class="alert alert-danger d-none" role="alert"></div>
+  <div id="successBox" class="alert alert-success d-none" role="alert"></div>
+
+  <div id="prepInstructionSetsCard" class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-2 flex-wrap">
+        <h2 class="h6 mb-0">Prep instruction sets</h2>
+        <div class="d-flex gap-2 flex-wrap">
+          <button id="addMeatDonenessBtn" type="button" class="btn btn-outline-secondary btn-sm">Meat doneness preset</button>
+          <button id="addTempGroupBtn" type="button" class="btn btn-outline-primary btn-sm">Add set</button>
+        </div>
+      </div>
+      <p class="text-body-secondary small mb-2">
+        Define cooking instructions (e.g. Blue, Rare, Med rare) and assign a set to products when you add or edit them.
+      </p>
+      <div id="tempGroupsEmpty" class="text-body-secondary small">No instruction sets yet. Use the preset or add your own.</div>
+      <div id="tempGroupsList" class="list-group d-none"></div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-6">
+          <label for="searchInput" class="form-label mb-1">Search</label>
+          <input
+            id="searchInput"
+            class="form-control"
+            type="search"
+            placeholder="Search by name…"
+            autocomplete="off"
+          />
+        </div>
+        <div class="col-12 col-md-4">
+          <label for="filterCategory" class="form-label mb-1">Category</label>
+          <select id="filterCategory" class="form-select">
+            <option value="">All categories</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-2 d-grid">
+          <button id="clearFiltersBtn" class="btn btn-outline-secondary" type="button">Clear</button>
+        </div>
+      </div>
+      <div class="text-body-secondary small mt-2">
+        Showing <span id="shownCount">0</span> of <span id="totalCount">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="emptyState" class="text-body-secondary">No products yet.</div>
+      <div class="table-responsive d-none" id="tableWrap">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width: 34%">Name</th>
+              <th style="width: 14%">Price</th>
+              <th>Category</th>
+              <th>Cooking instructions</th>
+              <th class="text-end" style="width: 1%">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal fade" id="productModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalTitle">Product</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="modalError" class="alert alert-danger d-none" role="alert"></div>
+
+          <div class="mb-3">
+            <label class="form-label" for="prodName">Name</label>
+            <input id="prodName" class="form-control" type="text" autocomplete="off" />
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="prodPrice">Price</label>
+            <input
+              id="prodPrice"
+              class="form-control"
+              type="number"
+              inputmode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              readonly
+            />
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="prodCostPrice">Cost price (optional)</label>
+            <input
+              id="prodCostPrice"
+              class="form-control"
+              type="number"
+              inputmode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              readonly
+            />
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="prodCategory">Category</label>
+            <select id="prodCategory" class="form-select">
+              <option value="">No category</option>
+            </select>
+          </div>
+          <div class="mb-0">
+            <label class="form-label" for="prodTemperatureGroup">Cooking instructions (optional)</label>
+            <select id="prodTemperatureGroup" class="form-select">
+              <option value="">None — no prompt when ordering</option>
+            </select>
+            <div class="form-text">
+              When set, staff choose an instruction (e.g. Rare) when adding this product to a table order.
+            </div>
+            <button id="managePrepSetsFromProductBtn" type="button" class="btn btn-link btn-sm px-0 mt-1">
+              Manage instruction sets…
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="saveBtn" type="button" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="tempGroupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="tempGroupModalTitle">Prep instruction set</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="tempGroupModalError" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3">
+            <label class="form-label" for="tempGroupName">Set name</label>
+            <input id="tempGroupName" class="form-control" type="text" placeholder="e.g. Meat doneness" autocomplete="off" />
+          </div>
+          <div class="mb-0">
+            <label class="form-label" for="tempGroupOptions">Instructions (one per line)</label>
+            <textarea
+              id="tempGroupOptions"
+              class="form-control"
+              rows="8"
+              placeholder="Blue&#10;Rare&#10;Med rare&#10;Medium&#10;Medium well&#10;Well done"
+            ></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="tempGroupSaveBtn" type="button" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Money numpad modal (mobile-friendly) -->
+  <div class="modal fade" id="moneyNumpadModalProducts" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Enter amount</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="text-body-secondary">Amount</div>
+            <div class="display-6 mb-0"><span id="currencyPrefixProducts">R</span><span id="moneyNumpadDisplayProducts">0.00</span></div>
+          </div>
+          <div class="text-body-secondary small mt-1">Tap numbers, then Done.</div>
+
+          <div class="row g-2 mt-3">
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="1">1</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="2">2</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="3">3</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="4">4</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="5">5</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="6">6</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="7">7</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="8">8</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="9">9</button></div>
+            <div class="col-4"><button class="btn btn-outline-danger w-100 py-3" id="moneyClearProducts">Clear</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key="0">0</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3" id="moneyBackProducts">⌫</button></div>
+            <div class="col-4"><button class="btn btn-outline-secondary w-100 py-3 money-key-products" data-key=".">.</button></div>
+            <div class="col-8">
+              <button class="btn btn-primary w-100 py-3" id="moneyDoneProducts">Done</button>
+            </div>
+          </div>
+
+          <div id="moneyNumpadErrorProducts" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const addBtn = document.getElementById("addBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const errorBox = document.getElementById("errorBox");
+    const successBox = document.getElementById("successBox");
+    const emptyState = document.getElementById("emptyState");
+    const tableWrap = document.getElementById("tableWrap");
+    const tbody = document.getElementById("tbody");
+    const searchInput = document.getElementById("searchInput");
+    const filterCategory = document.getElementById("filterCategory");
+    const clearFiltersBtn = document.getElementById("clearFiltersBtn");
+    const shownCountEl = document.getElementById("shownCount");
+    const totalCountEl = document.getElementById("totalCount");
+
+    const productModalEl = document.getElementById("productModal");
+    const productModal = new bootstrap.Modal(productModalEl);
+    const modalTitle = document.getElementById("modalTitle");
+    const modalError = document.getElementById("modalError");
+    const prodName = document.getElementById("prodName");
+    const prodPrice = document.getElementById("prodPrice");
+    const prodCostPrice = document.getElementById("prodCostPrice");
+    const prodCategory = document.getElementById("prodCategory");
+    const prodTemperatureGroup = document.getElementById("prodTemperatureGroup");
+    const saveBtn = document.getElementById("saveBtn");
+
+    const MEAT_DONENESS_PRESET = {
+      name: "Meat doneness",
+      options: ["Blue", "Rare", "Med rare", "Medium", "Medium well", "Well done"],
+    };
+
+    const addTempGroupBtn = document.getElementById("addTempGroupBtn");
+    const addMeatDonenessBtn = document.getElementById("addMeatDonenessBtn");
+    const managePrepSetsFromProductBtn = document.getElementById("managePrepSetsFromProductBtn");
+    const prepSetsCard = document.getElementById("prepInstructionSetsCard");
+    const tempGroupsEmpty = document.getElementById("tempGroupsEmpty");
+    const tempGroupsList = document.getElementById("tempGroupsList");
+    const tempGroupModalEl = document.getElementById("tempGroupModal");
+    const tempGroupModal = new bootstrap.Modal(tempGroupModalEl);
+    const tempGroupModalTitle = document.getElementById("tempGroupModalTitle");
+    const tempGroupModalError = document.getElementById("tempGroupModalError");
+    const tempGroupName = document.getElementById("tempGroupName");
+    const tempGroupOptions = document.getElementById("tempGroupOptions");
+    const tempGroupSaveBtn = document.getElementById("tempGroupSaveBtn");
+    /** @type {Array<{id:number,name:string,options:Array<{id:number,label:string,sort_order:number}>}>} */
+    let temperatureGroups = [];
+    /** @type {number|null} */
+    let editingTempGroupId = null;
+
+    const moneyNumpadModalEl = document.getElementById("moneyNumpadModalProducts");
+    const moneyNumpadDisplay = document.getElementById("moneyNumpadDisplayProducts");
+    const moneyNumpadError = document.getElementById("moneyNumpadErrorProducts");
+    const moneyClear = document.getElementById("moneyClearProducts");
+    const moneyBack = document.getElementById("moneyBackProducts");
+    const moneyDone = document.getElementById("moneyDoneProducts");
+    const moneyNumpadModal = new bootstrap.Modal(moneyNumpadModalEl);
+    let moneyDraft = "0";
+    /** @type {HTMLInputElement|null} */
+    let moneyTargetInput = null;
+    let pendingShowNumpad = false;
+
+    /** @type {Array<{id:number,name:string,price:string,cost_price?:string|null,category:{id:number,name:string}|null}>} */
+    let products = [];
+    /** @type {Array<{id:number,name:string,description?:string|null}>} */
+    let categories = [];
+    /** @type {number|null} */
+    let editingId = null;
+    let searchTerm = "";
+    /** @type {number|null} */
+    let selectedCategoryId = null;
+
+    function getToken() {
+      return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
+    }
+
+    function requireTokenOrRedirect() {
+      const token = getToken();
+      if (!token) window.location.assign("/login");
+      return token;
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("d-none");
+    }
+    function clearError() {
+      errorBox.textContent = "";
+      errorBox.classList.add("d-none");
+    }
+    function showSuccess(message) {
+      successBox.textContent = message;
+      successBox.classList.remove("d-none");
+      window.setTimeout(() => successBox.classList.add("d-none"), 2500);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function setModalError(message) {
+      modalError.textContent = message;
+      modalError.classList.remove("d-none");
+    }
+    function clearModalError() {
+      modalError.textContent = "";
+      modalError.classList.add("d-none");
+    }
+
+    function parseMoneyInput(raw) {
+      const s = String(raw == null ? "" : raw).trim().replace(",", ".");
+      const n = Number.parseFloat(s);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function formatMoney(n) {
+      return Number(n || 0).toFixed(2);
+    }
+    function getCurrencySymbol() {
+      const c = (localStorage.getItem("currency") || "ZAR").toUpperCase();
+      if (c === "USD") return "$";
+      if (c === "GBP") return "£";
+      return "R";
+    }
+    function applyCurrencySymbol() {
+      const cur = getCurrencySymbol();
+      const el = document.getElementById("currencyPrefixProducts");
+      if (el) el.textContent = cur;
+    }
+
+    function renderMoneyDraft() {
+      const n = parseMoneyInput(moneyDraft);
+      moneyNumpadDisplay.textContent = n == null ? "0.00" : formatMoney(n);
+    }
+
+    function setMoneyDraft(next) {
+      let s = String(next || "");
+      s = s.replace(/[^\d.]/g, "");
+      const firstDot = s.indexOf(".");
+      if (firstDot !== -1) {
+        s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replaceAll(".", "");
+      }
+      if (firstDot !== -1) {
+        const intPart = s.slice(0, firstDot);
+        let decPart = s.slice(firstDot + 1);
+        if (decPart.length > 2) decPart = decPart.slice(0, 2);
+        s = intPart + "." + decPart;
+      }
+      if (s.length > 10) s = s.slice(0, 10);
+      moneyDraft = s || "0";
+      renderMoneyDraft();
+    }
+
+    function openMoneyNumpad(targetInput) {
+      moneyTargetInput = targetInput;
+      moneyNumpadError.textContent = "";
+      moneyNumpadError.classList.add("d-none");
+      const current = String(targetInput.value || "").trim();
+      moneyDraft = current ? current : "0";
+      renderMoneyDraft();
+      pendingShowNumpad = productModalEl.classList.contains("show");
+      if (pendingShowNumpad) {
+        productModal.hide();
+        return;
+      }
+      moneyNumpadModal.show();
+    }
+
+    function commitMoneyDraft() {
+      if (!moneyTargetInput) return;
+      const n = parseMoneyInput(moneyDraft);
+      if (n == null || n < 0) {
+        moneyNumpadError.textContent = "Enter a valid amount.";
+        moneyNumpadError.classList.remove("d-none");
+        return;
+      }
+      moneyTargetInput.value = formatMoney(n);
+      moneyNumpadModal.hide();
+    }
+
+    function renderCategoryOptions(selectedId) {
+      const current = selectedId == null ? "" : String(selectedId);
+      prodCategory.innerHTML = `<option value="">No category</option>`;
+      for (const c of categories) {
+        const opt = document.createElement("option");
+        opt.value = String(c.id);
+        opt.textContent = c.name;
+        if (String(c.id) === current) opt.selected = true;
+        prodCategory.appendChild(opt);
+      }
+    }
+
+    function renderTemperatureGroupOptions(selectedId) {
+      const current = selectedId == null ? "" : String(selectedId);
+      prodTemperatureGroup.innerHTML = `<option value="">None</option>`;
+      for (const g of temperatureGroups) {
+        const opt = document.createElement("option");
+        opt.value = String(g.id);
+        opt.textContent = g.name;
+        if (String(g.id) === current) opt.selected = true;
+        prodTemperatureGroup.appendChild(opt);
+      }
+    }
+
+    function renderTemperatureGroups() {
+      const has = temperatureGroups.length > 0;
+      tempGroupsEmpty.classList.toggle("d-none", has);
+      tempGroupsList.classList.toggle("d-none", !has);
+      tempGroupsList.innerHTML = "";
+      if (!has) return;
+      for (const g of temperatureGroups) {
+        const labels = (g.options || []).map((o) => o.label).join(", ");
+        const row = document.createElement("div");
+        row.className = "list-group-item d-flex justify-content-between align-items-start gap-2";
+        row.innerHTML = `
+          <div>
+            <div class="fw-semibold">${escapeHtml(g.name)}</div>
+            <div class="text-body-secondary small">${escapeHtml(labels || "No options")}</div>
+          </div>
+          <div class="btn-group btn-group-sm flex-shrink-0">
+            <button type="button" class="btn btn-outline-primary" data-temp-action="edit" data-id="${g.id}">Edit</button>
+            <button type="button" class="btn btn-outline-danger" data-temp-action="delete" data-id="${g.id}">Delete</button>
+          </div>
+        `;
+        tempGroupsList.appendChild(row);
+      }
+    }
+
+    function setTempGroupModalError(message) {
+      tempGroupModalError.textContent = message;
+      tempGroupModalError.classList.remove("d-none");
+    }
+    function clearTempGroupModalError() {
+      tempGroupModalError.textContent = "";
+      tempGroupModalError.classList.add("d-none");
+    }
+
+    function openAddTempGroup(preset) {
+      editingTempGroupId = null;
+      tempGroupModalTitle.textContent = "Add prep instruction set";
+      if (preset) {
+        tempGroupName.value = preset.name;
+        tempGroupOptions.value = preset.options.join("\n");
+      } else {
+        tempGroupName.value = "";
+        tempGroupOptions.value = MEAT_DONENESS_PRESET.options.join("\n");
+      }
+      clearTempGroupModalError();
+      tempGroupModal.show();
+    }
+
+    function openEditTempGroup(g) {
+      editingTempGroupId = g.id;
+      tempGroupModalTitle.textContent = "Edit prep instruction set";
+      tempGroupName.value = g.name || "";
+      tempGroupOptions.value = (g.options || []).map((o) => o.label).join("\n");
+      clearTempGroupModalError();
+      tempGroupModal.show();
+    }
+
+    async function loadTemperatureGroups() {
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const res = await fetch("/api/temperature-groups", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => []);
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.assign("/login");
+        return;
+      }
+      temperatureGroups = Array.isArray(data) ? data : [];
+      renderTemperatureGroups();
+      renderTemperatureGroupOptions(prodTemperatureGroup.value || null);
+    }
+
+    async function saveTempGroup() {
+      clearTempGroupModalError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const name = (tempGroupName.value || "").trim();
+      const options = (tempGroupOptions.value || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!name) return setTempGroupModalError("Set name is required.");
+      if (!options.length) return setTempGroupModalError("Add at least one option (one per line).");
+
+      tempGroupSaveBtn.disabled = true;
+      tempGroupSaveBtn.textContent = "Saving…";
+      try {
+        const isEdit = editingTempGroupId != null;
+        const url = isEdit ? `/api/temperature-groups/${editingTempGroupId}` : "/api/temperature-groups";
+        const method = isEdit ? "PUT" : "POST";
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name, options }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (data && data.error === "name_already_exists") setTempGroupModalError("A set with that name already exists.");
+          else setTempGroupModalError("Save failed. Please try again.");
+          return;
+        }
+        tempGroupModal.hide();
+        showSuccess(isEdit ? "Instruction set updated." : "Instruction set created.");
+        await loadTemperatureGroups();
+        await loadProducts();
+      } catch (e) {
+        setTempGroupModalError("Network error.");
+      } finally {
+        tempGroupSaveBtn.disabled = false;
+        tempGroupSaveBtn.textContent = "Save";
+      }
+    }
+
+    async function deleteTempGroup(id) {
+      const g = temperatureGroups.find((x) => x.id === id);
+      const ok = window.confirm(`Delete instruction set "${g ? g.name : id}"? Products using it will be cleared.`);
+      if (!ok) return;
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      try {
+        const res = await fetch(`/api/temperature-groups/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          showError("Delete failed.");
+          return;
+        }
+        showSuccess("Instruction set deleted.");
+        await loadTemperatureGroups();
+        await loadProducts();
+      } catch (e) {
+        showError("Network error.");
+      }
+    }
+
+    function renderFilterCategoryOptions() {
+      const current = selectedCategoryId == null ? "" : String(selectedCategoryId);
+      filterCategory.innerHTML = `<option value="">All categories</option>`;
+      for (const c of categories) {
+        const opt = document.createElement("option");
+        opt.value = String(c.id);
+        opt.textContent = c.name;
+        if (String(c.id) === current) opt.selected = true;
+        filterCategory.appendChild(opt);
+      }
+    }
+
+    function getFilteredProducts() {
+      const q = (searchTerm || "").trim().toLowerCase();
+      return products.filter((p) => {
+        if (selectedCategoryId != null) {
+          const pid = p && p.category ? p.category.id : null;
+          if (pid !== selectedCategoryId) return false;
+        }
+        if (!q) return true;
+        return String(p && p.name ? p.name : "")
+          .toLowerCase()
+          .includes(q);
+      });
+    }
+
+    function openAdd() {
+      editingId = null;
+      modalTitle.textContent = "Add Product";
+      prodName.value = "";
+      prodPrice.value = "";
+      prodCostPrice.value = "";
+      renderCategoryOptions(null);
+      renderTemperatureGroupOptions(null);
+      clearModalError();
+      productModal.show();
+      window.setTimeout(() => prodName.focus(), 150);
+    }
+
+    function openEdit(p) {
+      editingId = p.id;
+      modalTitle.textContent = "Edit Product";
+      prodName.value = p.name || "";
+      prodPrice.value = p.price != null ? String(p.price) : "";
+      prodCostPrice.value = p.cost_price != null ? String(p.cost_price) : "";
+      renderCategoryOptions(p.category ? p.category.id : null);
+      const tgId = p.temperature_group ? p.temperature_group.id : p.temperature_group_id;
+      renderTemperatureGroupOptions(tgId != null ? tgId : null);
+      clearModalError();
+      productModal.show();
+      window.setTimeout(() => prodName.focus(), 150);
+    }
+
+    function render() {
+      const total = Array.isArray(products) ? products.length : 0;
+      const filtered = getFilteredProducts();
+      const has = filtered.length > 0;
+      totalCountEl.textContent = String(total);
+      shownCountEl.textContent = String(filtered.length);
+
+      emptyState.classList.toggle("d-none", has);
+      tableWrap.classList.toggle("d-none", !has);
+      tbody.innerHTML = "";
+      if (!has) return;
+
+      for (const p of filtered) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="fw-semibold">${escapeHtml(p.name || "")}</td>
+          <td>${escapeHtml(getCurrencySymbol())}${escapeHtml(p.price != null ? String(p.price) : "0.00")}</td>
+          <td class="text-body-secondary">${escapeHtml(p.category ? p.category.name : "—")}</td>
+          <td class="text-body-secondary">${escapeHtml(p.temperature_group ? p.temperature_group.name : "—")}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group">
+              <button class="btn btn-outline-primary" data-action="edit" data-id="${p.id}">Edit</button>
+              <button class="btn btn-outline-danger" data-action="delete" data-id="${p.id}">Delete</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadCategories() {
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      const res = await fetch("/api/categories", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => null);
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.assign("/login");
+        return;
+      }
+      if (!res.ok || !Array.isArray(data)) throw new Error("categories_failed");
+      categories = data;
+      renderFilterCategoryOptions();
+    }
+
+    async function loadProducts() {
+      clearError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+      try {
+        const res = await fetch("/api/products", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok || !Array.isArray(data)) {
+          showError("Failed to load products.");
+          products = [];
+          render();
+          return;
+        }
+        products = data;
+        render();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      }
+    }
+
+    async function loadAll() {
+      try {
+        await loadCategories();
+      } catch (e) {
+        showError("Failed to load categories (required for dropdown).");
+      }
+      try {
+        await loadTemperatureGroups();
+      } catch (e) {
+        showError("Failed to load prep instruction sets.");
+      }
+      await loadProducts();
+    }
+
+    async function saveProduct() {
+      clearModalError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+
+      const name = (prodName.value || "").trim();
+      const price = Number.parseFloat(String(prodPrice.value || "").trim());
+      const cost_price_raw = String(prodCostPrice.value || "").trim();
+      const cost_price = cost_price_raw ? Number.parseFloat(cost_price_raw) : null;
+      const category_id_raw = prodCategory.value;
+      const category_id = category_id_raw ? Number.parseInt(category_id_raw, 10) : null;
+      const temp_group_raw = prodTemperatureGroup.value;
+      const temperature_group_id = temp_group_raw ? Number.parseInt(temp_group_raw, 10) : null;
+
+      if (!name) return setModalError("Name is required.");
+      if (!Number.isFinite(price)) return setModalError("Price is required.");
+      if (price <= 0) return setModalError("Price must be positive.");
+      if (cost_price_raw && !Number.isFinite(cost_price)) return setModalError("Cost price is invalid.");
+      if (cost_price != null && cost_price < 0) return setModalError("Cost price cannot be negative.");
+      if (category_id_raw && !Number.isFinite(category_id)) return setModalError("Category is invalid.");
+      if (temp_group_raw && !Number.isFinite(temperature_group_id)) return setModalError("Cooking instruction set is invalid.");
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+
+      try {
+        const isEdit = editingId != null;
+        const url = isEdit ? `/api/products/${editingId}` : "/api/products";
+        const method = isEdit ? "PUT" : "POST";
+
+        const res = await fetch(url, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name, price, cost_price, category_id, temperature_group_id }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          if (data && data.error === "name_required") setModalError("Name is required.");
+          else if (data && (data.error === "price_required" || data.error === "price_invalid")) setModalError("Price is invalid.");
+          else if (data && data.error === "price_must_be_positive") setModalError("Price must be positive.");
+          else if (data && (data.error === "cost_price_invalid")) setModalError("Cost price is invalid.");
+          else if (data && (data.error === "cost_price_must_be_non_negative")) setModalError("Cost price cannot be negative.");
+          else if (data && data.error === "category_not_found") setModalError("Selected category was not found.");
+          else if (res.status === 403 && data && data.error === "forbidden")
+            setModalError("Only managers can add or edit products.");
+          else if (res.status === 403) setModalError("Manager login required to add or edit products.");
+          else setModalError("Save failed. Please try again.");
+          return;
+        }
+
+        productModal.hide();
+        showSuccess(isEdit ? "Product updated." : "Product created.");
+        await loadProducts();
+      } catch (e) {
+        setModalError("Network error. Please try again.");
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+      }
+    }
+
+    async function deleteProduct(id) {
+      const p = products.find((x) => x.id === id);
+      const ok = window.confirm(`Delete product "${p ? p.name : id}"?`);
+      if (!ok) return;
+
+      clearError();
+      const token = requireTokenOrRedirect();
+      if (!token) return;
+
+      try {
+        const res = await fetch(`/api/products/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 401) {
+          localStorage.removeItem("access_token");
+          window.location.assign("/login");
+          return;
+        }
+        if (!res.ok) {
+          showError("Delete failed.");
+          return;
+        }
+        showSuccess("Product deleted.");
+        await loadProducts();
+      } catch (e) {
+        showError("Network error. Please try again.");
+      }
+    }
+
+    tbody.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("button[data-action][data-id]") : null;
+      if (!btn) return;
+      const id = Number.parseInt(btn.getAttribute("data-id"), 10);
+      const action = btn.getAttribute("data-action");
+      if (!Number.isFinite(id)) return;
+      if (action === "edit") {
+        const p = products.find((x) => x.id === id);
+        if (p) openEdit(p);
+      } else if (action === "delete") {
+        deleteProduct(id);
+      }
+    });
+
+    addBtn.addEventListener("click", openAdd);
+    addTempGroupBtn.addEventListener("click", () => openAddTempGroup());
+    addMeatDonenessBtn?.addEventListener("click", () => openAddTempGroup(MEAT_DONENESS_PRESET));
+    managePrepSetsFromProductBtn?.addEventListener("click", () => {
+      productModal.hide();
+      prepSetsCard?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    tempGroupSaveBtn.addEventListener("click", saveTempGroup);
+    tempGroupsList.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("button[data-temp-action][data-id]") : null;
+      if (!btn) return;
+      const id = Number.parseInt(btn.getAttribute("data-id"), 10);
+      if (!Number.isFinite(id)) return;
+      const action = btn.getAttribute("data-temp-action");
+      const g = temperatureGroups.find((x) => x.id === id);
+      if (action === "edit" && g) openEditTempGroup(g);
+      else if (action === "delete") deleteTempGroup(id);
+    });
+    reloadBtn.addEventListener("click", loadAll);
+    searchInput.addEventListener("input", () => {
+      searchTerm = String(searchInput.value || "");
+      render();
+    });
+    filterCategory.addEventListener("change", () => {
+      const v = String(filterCategory.value || "").trim();
+      selectedCategoryId = v ? Number.parseInt(v, 10) : null;
+      render();
+    });
+    clearFiltersBtn.addEventListener("click", () => {
+      searchTerm = "";
+      selectedCategoryId = null;
+      searchInput.value = "";
+      renderFilterCategoryOptions();
+      render();
+    });
+    saveBtn.addEventListener("click", saveProduct);
+    prodName.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") saveProduct();
+    });
+
+    document.querySelectorAll(".money-key-products").forEach((btn) => {
+      btn.addEventListener("click", () => setMoneyDraft((moneyDraft || "") + btn.getAttribute("data-key")));
+    });
+    moneyClear.addEventListener("click", () => setMoneyDraft(""));
+    moneyBack.addEventListener("click", () => setMoneyDraft((moneyDraft || "").slice(0, -1)));
+    moneyDone.addEventListener("click", commitMoneyDraft);
+
+    productModalEl.addEventListener("hidden.bs.modal", () => {
+      if (pendingShowNumpad) {
+        pendingShowNumpad = false;
+        moneyNumpadModal.show();
+      }
+    });
+    moneyNumpadModalEl.addEventListener("hidden.bs.modal", () => {
+      // Return to product modal after numpad closes.
+      productModal.show();
+    });
+
+    prodPrice.addEventListener("click", () => openMoneyNumpad(prodPrice));
+    prodCostPrice.addEventListener("click", () => openMoneyNumpad(prodCostPrice));
+
+    requireTokenOrRedirect();
+    applyCurrencySymbol();
+    loadAll();
+  </script>
+{% endblock %}
+
