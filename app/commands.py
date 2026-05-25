@@ -147,6 +147,52 @@ def _apply_sqlite_upgrades() -> int:
                 )
                 upgraded += 1
 
+    if not table_exists("staff_trading_day_participations"):
+        db.create_all(bind_key="tenant")
+        upgraded += 1
+
+    if table_exists("staff_trading_day_participations") and table_exists("staff_login_sessions"):
+        with engine.connect() as conn:
+            trading_rows = conn.execute(
+                db.text("SELECT user_id, trading_date FROM settings WHERE user_id IS NOT NULL")
+            ).mappings().all()
+        trading_dates = {
+            int(row["user_id"]): row["trading_date"] for row in trading_rows if row.get("user_id") is not None
+        }
+        with engine.connect() as conn:
+            session_rows = conn.execute(
+                db.text("SELECT user_id, staff_id, logged_in_at FROM staff_login_sessions")
+            ).mappings().all()
+        for row in session_rows:
+            user_id = int(row["user_id"])
+            business_date = trading_dates.get(user_id)
+            if business_date is None:
+                logged_in_at = row.get("logged_in_at")
+                business_date = logged_in_at.date() if hasattr(logged_in_at, "date") else None
+            if business_date is None:
+                continue
+            with engine.connect() as conn:
+                exists = conn.execute(
+                    db.text(
+                        "SELECT 1 FROM staff_trading_day_participations "
+                        "WHERE user_id = :uid AND staff_id = :sid AND business_date = :bd LIMIT 1"
+                    ),
+                    {"uid": user_id, "sid": row["staff_id"], "bd": business_date},
+                ).first()
+            if not exists:
+                exec_sql(
+                    "INSERT INTO staff_trading_day_participations "
+                    "(user_id, staff_id, business_date, first_logged_in_at) "
+                    "VALUES (:uid, :sid, :bd, COALESCE(:logged_in_at, datetime('now')))",
+                    {
+                        "uid": user_id,
+                        "sid": row["staff_id"],
+                        "bd": business_date,
+                        "logged_in_at": row.get("logged_in_at"),
+                    },
+                )
+                upgraded += 1
+
     if table_exists("cash_ups"):
         with engine.connect() as conn:
             orphan = conn.execute(

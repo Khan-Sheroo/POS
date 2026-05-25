@@ -15,8 +15,8 @@ from app.models import (
     Table,
     TableOrder,
 )
-from app.services.staff_session_service import is_staff_logged_in
-from app.services.trading_day_service import get_trading_date, trading_window
+from app.services.staff_session_service import get_staff_ids_for_business_date, get_trading_day_staff_ids, is_staff_logged_in
+from app.services.trading_day_service import get_trading_date, trading_window, trading_window_for_date
 from app.utils.serialization import money_to_str
 
 
@@ -173,7 +173,23 @@ def open_tables_for_venue() -> list[dict]:
 def staff_completion_status(user_id: int, start: datetime, end: datetime, *, for_master: bool = False) -> dict:
     biz_date = business_date_for(start)
     done = completion_map(user_id, biz_date)
-    active_staff = Staff.query.filter_by(user_id=user_id, active=True).order_by(Staff.name.asc()).all()
+    participating_ids = get_staff_ids_for_business_date(user_id, biz_date)
+    if not participating_ids:
+        return {
+            "staff": [],
+            "all_complete": True,
+            "pending_staff": [],
+            "active_staff_count": 0,
+        }
+    active_staff = (
+        Staff.query.filter(
+            Staff.user_id == user_id,
+            Staff.active.is_(True),
+            Staff.id.in_(participating_ids),
+        )
+        .order_by(Staff.name.asc())
+        .all()
+    )
     staff_rows = []
     pending_names: list[str] = []
     for s in active_staff:
@@ -277,12 +293,17 @@ def build_staff_cashup(staff: Staff, start: datetime | None = None, end: datetim
     done = completion_map(staff.user_id, biz_date).get(staff.id)
 
     completion = _completion_json(done)
-    open_tables = open_tables_for_staff(staff.id)
+    current_trading_date = get_trading_date(staff.user_id)
+    is_current_trading_day = biz_date == current_trading_date
+    open_tables = open_tables_for_staff(staff.id) if is_current_trading_day else []
     has_open_tables = len(open_tables) > 0
-    logged_in = is_staff_logged_in(staff.user_id, staff.id)
+    logged_in = is_staff_logged_in(staff.user_id, staff.id) if is_current_trading_day else False
+    participated = staff.id in get_staff_ids_for_business_date(staff.user_id, biz_date)
     return {
         "staff": {"id": staff.id, "name": staff.name, "role": staff.role},
         "date": biz_date.isoformat(),
+        "is_current_trading_day": is_current_trading_day,
+        "participated_in_trading_day": participated,
         "completed": done is not None,
         "completed_at": completion["completed_at"] if completion else None,
         "completion": completion,
@@ -291,7 +312,7 @@ def build_staff_cashup(staff: Staff, start: datetime | None = None, end: datetim
         "open_tables": open_tables,
         "has_open_tables": has_open_tables,
         "is_logged_in": logged_in,
-        "can_cash_up": not has_open_tables and not logged_in and done is None,
+        "can_cash_up": is_current_trading_day and not has_open_tables and not logged_in and done is None,
     }
 
 
@@ -354,12 +375,21 @@ def build_sales_by_category(start: datetime, end: datetime) -> list[dict]:
     return out
 
 
-def existing_master_cashup(user_id: int, trading_date: date) -> CashUp | None:
+def existing_master_cashup(
+    user_id: int,
+    trading_date: date,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> CashUp | None:
     """At most one master cash up per user and trading day (enforced in DB)."""
     row = CashUp.query.filter_by(user_id=user_id, trading_date=trading_date).first()
     if row:
         return row
-    start, end = trading_window(user_id)
+    if start is None or end is None:
+        if trading_date == get_trading_date(user_id):
+            start, end = trading_window(user_id)
+        else:
+            start, end = trading_window_for_date(trading_date, user_id)
     return (
         CashUp.query.filter(
             CashUp.user_id == user_id,
@@ -384,26 +414,52 @@ def _master_cashup_json(c: CashUp) -> dict:
     }
 
 
-def build_master_cashup(user_id: int, start: datetime | None = None, end: datetime | None = None) -> dict:
+def build_master_cashup(
+    user_id: int,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    trading_date: date | None = None,
+) -> dict:
+    current_trading_date = get_trading_date(user_id)
+    selected_trading_date = trading_date or current_trading_date
     if start is None or end is None:
-        start, end = trading_window(user_id)
+        if selected_trading_date == current_trading_date:
+            start, end = trading_window(user_id)
+        else:
+            start, end = trading_window_for_date(selected_trading_date, user_id)
 
     orders = _closed_orders_for_day(start, end)
     summary, _ = _aggregate_closed_orders(orders)
     status = staff_completion_status(user_id, start, end, for_master=True)
     categories = build_sales_by_category(start, end)
-    trading_date = get_trading_date(user_id)
-    existing = existing_master_cashup(user_id, trading_date)
-    open_tables = open_tables_for_venue()
+    existing = existing_master_cashup(user_id, selected_trading_date, start, end)
+    is_current_trading_day = selected_trading_date == current_trading_date
+    open_tables = open_tables_for_venue() if is_current_trading_day else []
     has_open_tables = len(open_tables) > 0
 
     from app.services.trading_day_service import day_end_status
 
-    day_status = day_end_status(user_id)
+    if is_current_trading_day:
+        day_status = day_end_status(user_id)
+    else:
+        closed = existing is not None
+        day_status = {
+            "trading_date": selected_trading_date.isoformat(),
+            "day_closed": closed,
+            "day_closed_at": None,
+            "can_close_day": False,
+            "blockers": ["Viewing a filtered date. Switch back to the current trading day to submit day end."],
+            "staff_all_complete": status["all_complete"],
+            "master_submitted": existing is not None,
+            "open_table_count": 0,
+            "empty_open_orders_closed": 0,
+        }
 
     return {
         "date": business_date_for(start).isoformat(),
-        "trading_date": get_trading_date(user_id).isoformat(),
+        "trading_date": selected_trading_date.isoformat(),
+        "current_trading_date": current_trading_date.isoformat(),
+        "is_current_trading_day": is_current_trading_day,
         "summary": summary,
         "categories": categories,
         "staff_status": status,
@@ -412,7 +468,8 @@ def build_master_cashup(user_id: int, start: datetime | None = None, end: dateti
         "master_already_submitted": existing is not None,
         "master_cashup": _master_cashup_json(existing) if existing else None,
         "can_submit_master": (
-            status["all_complete"]
+            is_current_trading_day
+            and status["all_complete"]
             and existing is None
             and not day_status["day_closed"]
             and not has_open_tables

@@ -11,6 +11,7 @@ from .staff_cashup_completion import StaffCashupCompletion  # noqa: F401
 from .day_end import DayEnd  # noqa: F401
 from .staff import Staff  # noqa: F401
 from .staff_login_session import StaffLoginSession  # noqa: F401
+from .staff_trading_day_participation import StaffTradingDayParticipation  # noqa: F401
 from .setting import Setting  # noqa: F401
 from .table import Table  # noqa: F401
 from .table_order import TableOrder  # noqa: F401

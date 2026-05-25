@@ -37,8 +37,16 @@
   <div class="no-print">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
       <h1 class="h4 mb-0">Cash Ups</h1>
-      <button id="reloadBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload</button>
+      <div class="d-flex gap-2 flex-wrap align-items-end">
+        <div>
+          <label class="form-label small mb-1" for="filterDate">Date</label>
+          <input id="filterDate" class="form-control form-control-sm" type="date" />
+        </div>
+        <button id="filterCurrentBtn" class="btn btn-outline-primary btn-sm" type="button">Current trading day</button>
+        <button id="reloadBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload</button>
+      </div>
     </div>
+    <div id="filterHint" class="text-body-secondary small mb-3"></div>
   </div>
 
   <div class="no-print">
@@ -269,7 +277,12 @@
 
 {% block scripts %}
   <script>
+    const pageParams = new URLSearchParams(window.location.search);
+    let selectedBusinessDate = (pageParams.get("date") || "").trim();
     const reloadBtn = document.getElementById("reloadBtn");
+    const filterDateInput = document.getElementById("filterDate");
+    const filterCurrentBtn = document.getElementById("filterCurrentBtn");
+    const filterHint = document.getElementById("filterHint");
     const errorBox = document.getElementById("errorBox");
     const successBox = document.getElementById("successBox");
     const lastUpdatedEl = document.getElementById("lastUpdated");
@@ -328,6 +341,34 @@
     let masterCashupData = null;
     let canSubmitMaster = false;
 
+    function currentCashupQuery() {
+      return selectedBusinessDate ? `?date=${encodeURIComponent(selectedBusinessDate)}` : "";
+    }
+
+    function syncFilterUrl() {
+      const nextUrl = selectedBusinessDate
+        ? `${window.location.pathname}?date=${encodeURIComponent(selectedBusinessDate)}`
+        : window.location.pathname;
+      window.history.replaceState({}, "", nextUrl);
+    }
+
+    function updateFilterHint() {
+      if (!filterDateInput || !filterHint) return;
+      filterDateInput.value = selectedBusinessDate;
+      if (masterCashupData && masterCashupData.is_current_trading_day === false) {
+        filterHint.textContent = `Viewing ${masterCashupData.date} in read-only mode. Switch back to the current trading day to cash up or run day end.`;
+        return;
+      }
+      if (selectedBusinessDate) {
+        filterHint.textContent = `Viewing ${selectedBusinessDate}.`;
+        return;
+      }
+      const currentTradingDate = masterCashupData && masterCashupData.trading_date;
+      filterHint.textContent = currentTradingDate
+        ? `Showing the current trading day (${currentTradingDate}).`
+        : "Showing the current trading day.";
+    }
+
     function getToken() {
       return localStorage.getItem("staff_token") || localStorage.getItem("access_token");
     }
@@ -383,6 +424,20 @@
       return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
     }
 
+    function clearCurrentStaffSessionLocal() {
+      if (typeof clearStaffSessionLocal === "function") {
+        clearStaffSessionLocal();
+        return;
+      }
+      localStorage.removeItem("staff_token");
+      localStorage.removeItem("staff_id");
+      localStorage.removeItem("staff_name");
+      localStorage.removeItem("staff_role");
+      sessionStorage.removeItem("pos_authorized");
+      sessionStorage.removeItem("closed_tables_authorized");
+      sessionStorage.removeItem("closed_tables_mgr_pin");
+    }
+
     async function resolveCurrentStaffId() {
       const stored = localStorage.getItem("staff_id");
       if (stored) {
@@ -426,6 +481,7 @@
       );
       const alreadySubmitted = !!(masterCashupData && masterCashupData.master_already_submitted);
       const hasOpenTables = !!(masterCashupData && masterCashupData.has_open_tables);
+      const isCurrentTradingDay = !(masterCashupData && masterCashupData.is_current_trading_day === false);
       canSubmitMaster = !!(masterCashupData && masterCashupData.can_submit_master);
       submitBtn.disabled = !validCash || !canSubmitMaster;
       const pending = masterCashupData && masterCashupData.staff_status && masterCashupData.staff_status.pending_staff;
@@ -448,7 +504,7 @@
         masterOpenTablesAlert.classList.add("d-none");
       }
       masterSubmittedAlert.classList.toggle("d-none", !alreadySubmitted);
-      actualCashEl.disabled = alreadySubmitted;
+      actualCashEl.disabled = alreadySubmitted || !isCurrentTradingDay;
       submitBtn.textContent = alreadySubmitted ? "Master cash up submitted" : "Submit master cash up";
     }
 
@@ -529,6 +585,7 @@
       lastUpdatedEl.textContent = new Date().toLocaleString();
       renderStaffCompletionList(data && data.staff_status);
       renderMasterCategories(data && data.categories);
+      updateFilterHint();
       updateDifferenceUI();
       updateDayEndUI();
     }
@@ -650,7 +707,7 @@
       const token = requireTokenOrRedirect();
       if (!token) return;
       if (!isManager()) resolvedStaffId = await resolveCurrentStaffId();
-      const res = await fetch("/api/cashups/staff", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/cashups/staff${currentCashupQuery()}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => []);
       if (res.status === 401) {
         localStorage.removeItem("access_token");
@@ -680,7 +737,7 @@
     async function loadStaffCashup(staffId) {
       const token = requireTokenOrRedirect();
       if (!token || !staffId) return;
-      const res = await fetch(`/api/cashups/staff/${staffId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/cashups/staff/${staffId}${currentCashupQuery()}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
         localStorage.removeItem("access_token");
@@ -696,7 +753,7 @@
       applyCurrencyPrefix();
       const token = requireTokenOrRedirect();
       if (!token) return;
-      const res = await fetch("/api/cashups/master", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/cashups/master${currentCashupQuery()}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
         localStorage.removeItem("access_token");
@@ -724,6 +781,7 @@
       const completed = !!(report && report.completed);
       const hasOpenTables = !!(report && report.has_open_tables);
       const loggedIn = !!(report && report.is_logged_in);
+      const isCurrentTradingDay = !!(report && report.is_current_trading_day);
       if (!hasStaff) {
         completeStaffCashupBtn.disabled = true;
         completeStaffCashupBtn.textContent = "Cash up";
@@ -731,7 +789,7 @@
       }
       const name = report.staff.name || "staff";
       completeStaffCashupBtn.textContent = `Cash up ${name}`;
-      completeStaffCashupBtn.disabled = completed || hasOpenTables || loggedIn;
+      completeStaffCashupBtn.disabled = !isCurrentTradingDay || completed || hasOpenTables || loggedIn;
     }
 
     function updateStaffCashupBalanceStatus() {
@@ -840,7 +898,7 @@
         async function loadCashups() {
       const token = requireTokenOrRedirect();
       if (!token) return;
-      const res = await fetch("/api/cashups", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/cashups${currentCashupQuery()}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => null);
       if (res.status === 401) {
         localStorage.removeItem("access_token");
@@ -964,8 +1022,12 @@
           await loadMasterCashup();
           return;
         }
-        showSuccess(`Day closed. New trading day: ${data.new_trading_date || "—"}.`);
-        await loadAll();
+        showSuccess(`Day closed. All staff logged out. New trading day: ${data.new_trading_date || "—"}.`);
+        clearCurrentStaffSessionLocal();
+        window.setTimeout(() => {
+          window.location.assign("/staff/login?switch=1");
+        }, 300);
+        return;
       } catch (e) {
         showError("Network error. Please try again.");
       } finally {
@@ -985,6 +1047,18 @@
     }
 
     reloadBtn.addEventListener("click", loadAll);
+    filterDateInput?.addEventListener("change", () => {
+      selectedBusinessDate = (filterDateInput.value || "").trim();
+      syncFilterUrl();
+      updateFilterHint();
+      loadAll();
+    });
+    filterCurrentBtn?.addEventListener("click", () => {
+      selectedBusinessDate = "";
+      syncFilterUrl();
+      updateFilterHint();
+      loadAll();
+    });
     actualCashEl.addEventListener("input", updateDifferenceUI);
     submitBtn.addEventListener("click", submitCashup);
     dayEndBtn.addEventListener("click", submitDayEnd);
@@ -998,6 +1072,7 @@
     modalActualCash.addEventListener("input", updateStaffCashupBalanceStatus);
     modalActualCredit.addEventListener("input", updateStaffCashupBalanceStatus);
     requireTokenOrRedirect();
+    updateFilterHint();
     loadAll();
   </script>
 {% endblock %}

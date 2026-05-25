@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from app.extensions import db
-from app.models import CashUp, DayEnd, Setting, TableOrder
+from app.models import CashUp, DayEnd, Setting, StaffLoginSession, TableOrder
 
 
 def get_setting(user_id: int) -> Setting:
@@ -22,10 +22,24 @@ def get_trading_date(user_id: int) -> date:
     return datetime.utcnow().date()
 
 
+def trading_window_for_date(target_date: date, user_id: int | None = None) -> tuple[datetime, datetime]:
+    start = datetime.combine(target_date, datetime.min.time())
+    closed = day_end_record(user_id, target_date) if user_id is not None else None
+    is_current_trading_day = user_id is not None and target_date == get_trading_date(user_id)
+    if closed and closed.closed_at:
+        end = closed.closed_at + timedelta(microseconds=1)
+    elif is_current_trading_day:
+        # An active trading day stays open until day end, even across calendar days.
+        live_end = datetime.utcnow() + timedelta(seconds=1)
+        end = live_end if live_end > start else start + timedelta(seconds=1)
+    else:
+        end = start + timedelta(days=1)
+    return start, end
+
+
 def trading_window(user_id: int) -> tuple[datetime, datetime]:
     d = get_trading_date(user_id)
-    start = datetime.combine(d, datetime.min.time())
-    end = start + timedelta(days=1)
+    start, end = trading_window_for_date(d, user_id)
     return start, end
 
 
@@ -129,7 +143,12 @@ def close_trading_day(user_id: int) -> dict:
     db.session.add(row)
 
     s = get_setting(user_id)
-    s.trading_date = trading_date + timedelta(days=1)
+    next_trading_date = trading_date + timedelta(days=1)
+    today = datetime.utcnow().date()
+    if next_trading_date < today:
+        next_trading_date = today
+    s.trading_date = next_trading_date
+    cleared_logins = StaffLoginSession.query.filter_by(user_id=user_id).delete()
     db.session.commit()
 
     return {
@@ -137,4 +156,5 @@ def close_trading_day(user_id: int) -> dict:
         "closed_trading_date": trading_date.isoformat(),
         "new_trading_date": s.trading_date.isoformat(),
         "closed_at": row.closed_at.isoformat(),
+        "staff_logins_cleared": cleared_logins,
     }

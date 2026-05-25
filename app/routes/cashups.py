@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from decimal import Decimal, InvalidOperation
 
@@ -28,8 +28,14 @@ from app.services.staff_cashup_service import (
     open_tables_for_venue,
     staff_completion_status,
 )
-from app.services.staff_session_service import is_staff_logged_in
-from app.services.trading_day_service import close_trading_day, day_end_status, get_trading_date, trading_window
+from app.services.staff_session_service import get_staff_ids_for_business_date, is_staff_logged_in
+from app.services.trading_day_service import (
+    close_trading_day,
+    day_end_status,
+    get_trading_date,
+    trading_window,
+    trading_window_for_date,
+)
 
 from app.utils.auth import login_required
 
@@ -154,10 +160,17 @@ def _cashup_json(c: CashUp) -> dict:
     }
 
 
+def _requested_business_date() -> date | None:
+    raw = (request.args.get("date") or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
-
-def _staff_for_cashup(staff_id: int) -> Staff | tuple[dict, int]:
+def _staff_for_cashup(staff_id: int, business_date: date | None = None) -> Staff | tuple[dict, int]:
 
     user = request.current_user  # type: ignore[attr-defined]
 
@@ -170,6 +183,10 @@ def _staff_for_cashup(staff_id: int) -> Staff | tuple[dict, int]:
     if not staff or not staff.active or staff.user_id != user.id:
 
         return {"error": "staff_not_found"}, 404
+
+    target_date = business_date or get_trading_date(user.id)
+    if staff.id not in get_staff_ids_for_business_date(user.id, target_date):
+        return {"error": "staff_not_in_trading_day"}, 404
 
 
 
@@ -192,7 +209,10 @@ def _staff_for_cashup(staff_id: int) -> Staff | tuple[dict, int]:
 def get_master_cashup():
 
     user = request.current_user  # type: ignore[attr-defined]
-
+    selected_date = _requested_business_date()
+    if selected_date:
+        start, end = trading_window_for_date(selected_date, user.id)
+        return jsonify(build_master_cashup(user.id, start, end, selected_date))
     return jsonify(build_master_cashup(user.id))
 
 
@@ -211,9 +231,21 @@ def list_staff_cashups():
 
     current_staff = getattr(request, "current_staff", None)
 
-    start, end = trading_window(user.id)
+    selected_date = _requested_business_date() or get_trading_date(user.id)
+    start, end = trading_window_for_date(selected_date, user.id)
 
-    q = Staff.query.filter_by(user_id=user.id, active=True).order_by(Staff.name.asc())
+    participating_ids = get_staff_ids_for_business_date(user.id, selected_date)
+    if not participating_ids:
+        return jsonify([])
+
+    q = (
+        Staff.query.filter(
+            Staff.user_id == user.id,
+            Staff.active.is_(True),
+            Staff.id.in_(participating_ids),
+        )
+        .order_by(Staff.name.asc())
+    )
 
     if current_staff and getattr(current_staff, "role", "") != "manager":
 
@@ -257,12 +289,17 @@ def get_staff_cashup(staff_id: int):
 
     """Full staff cash up with per-table breakdown (printable)."""
 
-    result = _staff_for_cashup(staff_id)
+    user = request.current_user  # type: ignore[attr-defined]
+    selected_date = _requested_business_date()
+    result = _staff_for_cashup(staff_id, selected_date)
 
     if not isinstance(result, Staff):
 
         return jsonify(result[0]), result[1]
 
+    if selected_date:
+        start, end = trading_window_for_date(selected_date, user.id)
+        return jsonify(build_staff_cashup(result, start, end))
     return jsonify(build_staff_cashup(result))
 
 
@@ -276,8 +313,12 @@ def get_staff_cashup(staff_id: int):
 def complete_staff_cashup(staff_id: int):
 
     user = request.current_user  # type: ignore[attr-defined]
+    selected_date = _requested_business_date()
+    current_trading_date = get_trading_date(user.id)
+    if selected_date and selected_date != current_trading_date:
+        return jsonify({"error": "historical_view_read_only"}), 400
 
-    result = _staff_for_cashup(staff_id)
+    result = _staff_for_cashup(staff_id, current_trading_date)
 
     if not isinstance(result, Staff):
 
@@ -379,8 +420,11 @@ def complete_staff_cashup(staff_id: int):
 def list_cashups():
 
     user = request.current_user  # type: ignore[attr-defined]
-
-    rows = CashUp.query.filter_by(user_id=user.id).order_by(CashUp.id.desc()).limit(200).all()
+    selected_date = _requested_business_date()
+    q = CashUp.query.filter_by(user_id=user.id)
+    if selected_date:
+        q = q.filter_by(trading_date=selected_date)
+    rows = q.order_by(CashUp.id.desc()).limit(200).all()
 
     return jsonify([_cashup_json(r) for r in rows])
 
