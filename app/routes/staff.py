@@ -104,6 +104,39 @@ def create_staff():
     return jsonify(_staff_json(staff)), 201
 
 
+@staff_bp.put("/<int:staff_id>")
+@login_required
+@role_required("manager")
+def update_staff(staff_id: int):
+    user = request.current_user  # type: ignore[attr-defined]
+    staff = Staff.query.get(staff_id)
+    if not staff or not staff.active or staff.user_id != user.id:
+        return jsonify({"error": "invalid_staff"}), 404
+
+    data = request.get_json(silent=True) or {}
+    first_name = (data.get("first_name") or "").strip()
+    last_name = (data.get("last_name") or "").strip()
+    position = (data.get("position") or "").strip().lower()
+    pin = str(data.get("pin") or "").strip()
+
+    if not first_name or not last_name:
+        return jsonify({"error": "name_required"}), 400
+    if position not in {"manager", "waiter", "bartender", "clerk"}:
+        return jsonify({"error": "position_invalid"}), 400
+    if pin and (not pin.isdigit() or len(pin) not in {4, 5}):
+        return jsonify({"error": "pin_invalid"}), 400
+
+    staff.name = f"{first_name} {last_name}"
+    staff.role = position
+    if pin:
+        staff.set_pin(pin)
+
+    from app.extensions import db
+
+    db.session.commit()
+    return jsonify(_staff_json(staff))
+
+
 @staff_bp.post("/login")
 @login_required
 def staff_login():

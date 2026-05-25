@@ -767,7 +767,7 @@
 
       /** @type {"whole"|"split"|null} */
       let transferMode = null;
-      /** @type {Array<{product_id:number,name:string,quantity:number,move_qty:number}>} */
+      /** @type {Array<{line_key:string,product_id:number,name:string,quantity:number,move_qty:number,temperature?:string|null}>} */
       let splitDraft = [];
 
       // Owner change UI
@@ -1167,15 +1167,19 @@
             const maxQ = Math.max(0, Number.parseInt(String(it.quantity), 10) || 0);
             const mv = Math.max(0, Math.min(maxQ, Number.parseInt(String(it.move_qty), 10) || 0));
             const selected = mv > 0;
+            const tempLine = it.temperature
+              ? `<div class="text-body-secondary small">${escapeHtml(it.temperature)}</div>`
+              : "";
             return `
               <button
                 type="button"
                 class="list-group-item list-group-item-action px-0 transfer-split-item ${selected ? "active" : ""}"
-                data-id="${it.product_id}"
+                data-key="${escapeHtml(it.line_key)}"
               >
                 <div class="d-flex justify-content-between align-items-start gap-2">
                   <div class="text-truncate">
                     <div class="fw-semibold">${escapeHtml(it.name || "Item")}</div>
+                    ${tempLine}
                     <div class="text-body-secondary small">Available: ${maxQ}${maxQ > 1 ? " • Tap to choose qty" : " • Tap to toggle"}</div>
                   </div>
                   <div class="text-end">
@@ -1207,10 +1211,12 @@
         }
         if (mode === "split") {
           splitDraft = cart.map((c) => ({
+            line_key: cartLineKey(c.product_id, c.temperature || ""),
             product_id: c.product_id,
             name: c.name,
             quantity: c.quantity,
             move_qty: 0,
+            temperature: c.temperature || null,
           }));
           renderSplitDraft();
         }
@@ -1222,7 +1228,7 @@
         const items = [];
         for (const it of splitDraft) {
           const q = Number.parseInt(String(it.move_qty), 10) || 0;
-          if (q > 0) items.push({ product_id: it.product_id, quantity: q });
+          if (q > 0) items.push({ product_id: it.product_id, quantity: q, temperature: it.temperature || null });
         }
         return items;
       }
@@ -2630,11 +2636,11 @@
 
       if (transferItemsList) {
         transferItemsList.addEventListener("click", (e) => {
-          const btn = e.target && e.target.closest ? e.target.closest(".transfer-split-item[data-id]") : null;
+          const btn = e.target && e.target.closest ? e.target.closest(".transfer-split-item[data-key]") : null;
           if (!btn) return;
-          const pid = Number.parseInt(btn.getAttribute("data-id"), 10);
-          if (!Number.isFinite(pid)) return;
-          const idx = splitDraft.findIndex((x) => x.product_id === pid);
+          const lineKey = String(btn.getAttribute("data-key") || "");
+          if (!lineKey) return;
+          const idx = splitDraft.findIndex((x) => x.line_key === lineKey);
           if (idx === -1) return;
 
           const maxQ = Math.max(0, Number.parseInt(String(splitDraft[idx].quantity), 10) || 0);

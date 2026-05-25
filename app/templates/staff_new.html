@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Create User • POS System</title>
+    <title>Manage Users • POS System</title>
     <script>
       (function () {
         const stored = localStorage.getItem("theme");
@@ -22,7 +22,7 @@
   <body class="bg-body-tertiary">
     <nav class="navbar bg-body border-bottom">
       <div class="container">
-        <a class="navbar-brand" href="/tables">Create user</a>
+        <a class="navbar-brand" href="/tables">Manage users</a>
         <div class="ms-auto d-flex gap-2">
           <button id="themeToggle" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
           <button id="logoutBtn" class="btn btn-outline-secondary btn-sm" type="button">Switch user</button>
@@ -76,6 +76,76 @@
               </form>
             </div>
           </div>
+          <div class="card shadow-sm mt-4">
+            <div class="card-body p-4">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Existing users</h2>
+                  <p class="text-body-secondary mb-0">Edit names, roles, and change a user's PIN.</p>
+                </div>
+                <button id="reloadUsersBtn" class="btn btn-outline-secondary btn-sm" type="button">Reload users</button>
+              </div>
+
+              <div id="usersErrorBox" class="alert alert-danger d-none" role="alert"></div>
+              <div id="usersEmpty" class="text-body-secondary small">No users created yet.</div>
+              <div id="usersTableWrap" class="table-responsive d-none">
+                <table class="table align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Role</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usersTbody"></tbody>
+                </table>
+              </div>
+
+              <div id="editUserSection" class="border rounded p-3 mt-3 d-none">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                  <div>
+                    <div class="fw-semibold">Edit user</div>
+                    <div class="text-body-secondary small">Leave the new PIN blank if you do not want to change it.</div>
+                  </div>
+                  <button id="cancelEditBtn" class="btn btn-outline-secondary btn-sm" type="button">Cancel</button>
+                </div>
+
+                <div id="editErrorBox" class="alert alert-danger d-none" role="alert"></div>
+                <div id="editSuccessBox" class="alert alert-success d-none" role="alert"></div>
+
+                <form id="editForm" class="row g-3" novalidate>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="editFirstName">First name</label>
+                    <input id="editFirstName" class="form-control" required />
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="editLastName">Last name</label>
+                    <input id="editLastName" class="form-control" required />
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label" for="editPosition">Position</label>
+                    <select id="editPosition" class="form-select" required>
+                      <option value="manager">Manager</option>
+                      <option value="waiter">Waiter</option>
+                      <option value="bartender">Bartender</option>
+                      <option value="clerk">Clerk</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="editPin">New PIN (optional)</label>
+                    <input id="editPin" class="form-control" inputmode="numeric" pattern="\\d*" maxlength="5" />
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="editPin2">Confirm new PIN</label>
+                    <input id="editPin2" class="form-control" inputmode="numeric" pattern="\\d*" maxlength="5" />
+                  </div>
+                  <div class="col-12 d-grid gap-2">
+                    <button id="saveEditBtn" class="btn btn-primary" type="submit">Save changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
           <p class="text-center text-body-secondary mt-3 mb-0 small">
             Requires staff manager login (<code>localStorage.staff_token</code>).
           </p>
@@ -86,11 +156,29 @@
     <script>
       const themeToggle = document.getElementById("themeToggle");
       const logoutBtn = document.getElementById("logoutBtn");
-
       const form = document.getElementById("form");
       const submitBtn = document.getElementById("submitBtn");
       const errorBox = document.getElementById("errorBox");
       const successBox = document.getElementById("successBox");
+      const reloadUsersBtn = document.getElementById("reloadUsersBtn");
+      const usersErrorBox = document.getElementById("usersErrorBox");
+      const usersEmpty = document.getElementById("usersEmpty");
+      const usersTableWrap = document.getElementById("usersTableWrap");
+      const usersTbody = document.getElementById("usersTbody");
+      const editUserSection = document.getElementById("editUserSection");
+      const editForm = document.getElementById("editForm");
+      const cancelEditBtn = document.getElementById("cancelEditBtn");
+      const saveEditBtn = document.getElementById("saveEditBtn");
+      const editErrorBox = document.getElementById("editErrorBox");
+      const editSuccessBox = document.getElementById("editSuccessBox");
+      const editFirstName = document.getElementById("editFirstName");
+      const editLastName = document.getElementById("editLastName");
+      const editPosition = document.getElementById("editPosition");
+      const editPin = document.getElementById("editPin");
+      const editPin2 = document.getElementById("editPin2");
+
+      let staffUsers = [];
+      let editingStaffId = null;
 
       function getTheme() {
         return document.documentElement.getAttribute("data-bs-theme") || "light";
@@ -112,6 +200,14 @@
         el.textContent = "";
         el.classList.add("d-none");
       }
+      function escapeHtml(value) {
+        return String(value || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
 
       function requireTokensOrRedirect() {
         const company = localStorage.getItem("access_token");
@@ -119,6 +215,109 @@
         const staff = localStorage.getItem("staff_token");
         if (!staff) window.location.assign("/staff/login");
         return { company, staff };
+      }
+
+      function roleLabel(role) {
+        if (role === "manager") return "Manager";
+        if (role === "waiter") return "Waiter";
+        if (role === "bartender") return "Bartender";
+        if (role === "clerk") return "Clerk";
+        return role || "User";
+      }
+
+      function splitFullName(name) {
+        const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return { firstName: "", lastName: "" };
+        const firstName = parts.shift() || "";
+        return { firstName, lastName: parts.join(" ") };
+      }
+
+      function resetEditForm() {
+        editingStaffId = null;
+        editForm.reset();
+        hide(editErrorBox);
+        hide(editSuccessBox);
+        editUserSection.classList.add("d-none");
+      }
+
+      function startEditUser(staffUser) {
+        editingStaffId = staffUser.id;
+        const parts = splitFullName(staffUser.name);
+        editFirstName.value = parts.firstName;
+        editLastName.value = parts.lastName;
+        editPosition.value = staffUser.role || "waiter";
+        editPin.value = "";
+        editPin2.value = "";
+        hide(editErrorBox);
+        hide(editSuccessBox);
+        editUserSection.classList.remove("d-none");
+        editFirstName.focus();
+      }
+
+      function renderUsers() {
+        const hasUsers = staffUsers.length > 0;
+        usersEmpty.classList.toggle("d-none", hasUsers);
+        usersTableWrap.classList.toggle("d-none", !hasUsers);
+        usersTbody.innerHTML = "";
+        if (!hasUsers) return;
+
+        for (const staffUser of staffUsers) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>
+              <div class="fw-semibold">${escapeHtml(staffUser.name)}</div>
+            </td>
+            <td>${escapeHtml(roleLabel(staffUser.role))}</td>
+            <td class="text-end">
+              <button class="btn btn-outline-primary btn-sm" type="button" data-edit-id="${staffUser.id}">Edit</button>
+            </td>
+          `;
+          usersTbody.appendChild(tr);
+        }
+
+        usersTbody.querySelectorAll("[data-edit-id]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const id = Number.parseInt(btn.getAttribute("data-edit-id"), 10);
+            const staffUser = staffUsers.find((row) => row.id === id);
+            if (staffUser) startEditUser(staffUser);
+          });
+        });
+      }
+
+      async function loadUsers() {
+        hide(usersErrorBox);
+        const { staff } = requireTokensOrRedirect();
+        if (!staff) return;
+
+        reloadUsersBtn.disabled = true;
+        reloadUsersBtn.textContent = "Loading…";
+        try {
+          const res = await fetch("/api/staff", {
+            headers: { Authorization: `Bearer ${staff}` },
+          });
+          const data = await res.json().catch(() => []);
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("staff_token");
+            window.location.assign("/login");
+            return;
+          }
+          if (res.status === 403) {
+            window.location.assign("/staff/login");
+            return;
+          }
+          if (!res.ok || !Array.isArray(data)) {
+            show(usersErrorBox, "Failed to load users.");
+            return;
+          }
+          staffUsers = data;
+          renderUsers();
+        } catch (err) {
+          show(usersErrorBox, "Network error.");
+        } finally {
+          reloadUsersBtn.disabled = false;
+          reloadUsersBtn.textContent = "Reload users";
+        }
       }
 
       logoutBtn.addEventListener("click", () => {
@@ -130,6 +329,8 @@
         window.location.assign("/staff/login?switch=1");
       });
       themeToggle.addEventListener("click", () => setTheme(getTheme() === "dark" ? "light" : "dark"));
+      reloadUsersBtn.addEventListener("click", loadUsers);
+      cancelEditBtn.addEventListener("click", resetEditForm);
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -146,8 +347,9 @@
         const pin2 = String(document.getElementById("pin2").value || "").trim();
 
         if (!first_name || !last_name) return show(errorBox, "First and last name are required.");
-        if (!["manager", "waiter", "bartender", "clerk"].includes(position))
+        if (!["manager", "waiter", "bartender", "clerk"].includes(position)) {
           return show(errorBox, "Invalid position.");
+        }
         if (!/^\d{4,5}$/.test(pin)) return show(errorBox, "PIN must be 4–5 digits.");
         if (pin !== pin2) return show(errorBox, "PINs do not match.");
 
@@ -181,6 +383,7 @@
           show(successBox, `Created: ${data.name} (${data.role})`);
           form.reset();
           document.getElementById("firstName").focus();
+          await loadUsers();
         } catch (err) {
           show(errorBox, "Network error.");
         } finally {
@@ -189,8 +392,79 @@
         }
       });
 
+      editForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        hide(editErrorBox);
+        hide(editSuccessBox);
+
+        if (!editingStaffId) return show(editErrorBox, "Select a user first.");
+
+        const { staff } = requireTokensOrRedirect();
+        if (!staff) return;
+
+        const first_name = (editFirstName.value || "").trim();
+        const last_name = (editLastName.value || "").trim();
+        const position = editPosition.value;
+        const pin = String(editPin.value || "").trim();
+        const pin2 = String(editPin2.value || "").trim();
+
+        if (!first_name || !last_name) return show(editErrorBox, "First and last name are required.");
+        if (!["manager", "waiter", "bartender", "clerk"].includes(position)) {
+          return show(editErrorBox, "Invalid position.");
+        }
+        if (pin || pin2) {
+          if (!/^\d{4,5}$/.test(pin)) return show(editErrorBox, "New PIN must be 4–5 digits.");
+          if (pin !== pin2) return show(editErrorBox, "PINs do not match.");
+        }
+
+        saveEditBtn.disabled = true;
+        saveEditBtn.textContent = "Saving…";
+        try {
+          const payload = { first_name, last_name, position };
+          if (pin) payload.pin = pin;
+
+          const res = await fetch(`/api/staff/${editingStaffId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${staff}`,
+            },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (res.status === 401) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("staff_token");
+            window.location.assign("/login");
+            return;
+          }
+          if (res.status === 403) {
+            window.location.assign("/staff/login");
+            return;
+          }
+          if (!res.ok) {
+            return show(editErrorBox, data && data.error ? `Failed: ${data.error}` : "Failed to update user.");
+          }
+
+          if (String(data.id) === String(localStorage.getItem("staff_id") || "")) {
+            if (data.name) localStorage.setItem("staff_name", data.name);
+            if (data.role) localStorage.setItem("staff_role", data.role);
+          }
+
+          show(editSuccessBox, pin ? "User updated and PIN changed." : "User updated.");
+          await loadUsers();
+        } catch (err) {
+          show(editErrorBox, "Network error.");
+        } finally {
+          saveEditBtn.disabled = false;
+          saveEditBtn.textContent = "Save changes";
+        }
+      });
+
       requireTokensOrRedirect();
       updateThemeToggleLabel();
+      loadUsers();
     </script>
   </body>
 </html>
