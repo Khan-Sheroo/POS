@@ -31,6 +31,9 @@
       .sidebar {
         width: var(--sidebar-width);
       }
+      .sidebar-global-toggle {
+        display: none;
+      }
       .sidebar-hidden .sidebar {
         width: 0;
         padding: 0 !important;
@@ -71,8 +74,15 @@
     <!-- Mobile top bar -->
     <nav class="navbar bg-body border-bottom d-lg-none">
       <div class="container-fluid">
-        <button id="sidebarVisibilityBtnMobile" class="btn btn-outline-secondary" type="button" aria-label="Toggle sidebar">
-          =
+        <button
+          id="sidebarVisibilityBtnMobile"
+          class="btn btn-outline-secondary"
+          type="button"
+          aria-label="Open menu"
+          aria-controls="sidebarOffcanvas"
+          aria-expanded="false"
+        >
+          &#9776;
         </button>
         <a class="navbar-brand ms-2 mb-0" href="/tables/list">{% block brand %}POS System{% endblock %}</a>
         <div class="ms-auto d-flex gap-2 flex-wrap justify-content-end">
@@ -82,6 +92,7 @@
           <a href="/staff/new" class="btn btn-outline-primary btn-sm">Create user</a>
           <button id="themeToggleMobile" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
           <button id="staffLogoutBtnMobile" class="btn btn-outline-secondary btn-sm" type="button">Switch user</button>
+          <button id="companyLogoutBtnMobile" class="btn btn-outline-danger btn-sm" type="button">Log out account</button>
         </div>
       </div>
     </nav>
@@ -204,6 +215,7 @@
             <div class="ms-auto d-flex gap-2 flex-wrap">
               <button id="themeToggleTop" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
               <button id="staffLogoutBtnTop" class="btn btn-outline-secondary btn-sm" type="button">Switch user</button>
+              
             </div>
           </div>
         </div>
@@ -367,7 +379,7 @@
 
       function updateSidebarToggleUi(hidden) {
         const active = !hidden;
-        for (const id of ["sidebarVisibilityBtnMobile", "sidebarVisibilityBtnGlobal"]) {
+        for (const id of ["sidebarVisibilityBtnGlobal"]) {
           const el = document.getElementById(id);
           if (!el) continue;
           el.classList.toggle("active", active);
@@ -512,14 +524,16 @@
         .filter(Boolean);
       for (const btn of staffLogoutBtns) btn.addEventListener("click", switchStaffUser);
 
-      const companyLogoutBtns = ["companyLogoutBtnDesktop"]
+      const companyLogoutBtns = ["companyLogoutBtnDesktop", "companyLogoutBtnTop", "companyLogoutBtnMobile"]
         .map((id) => document.getElementById(id))
         .filter(Boolean);
       for (const btn of companyLogoutBtns) btn.addEventListener("click", companyLogout);
 
-      const sidebarBtns = ["sidebarVisibilityBtnMobile"]
-        .map((id) => document.getElementById(id))
-        .filter(Boolean);
+      const sidebarOffcanvasEl = document.getElementById("sidebarOffcanvas");
+      const sidebarOffcanvas = sidebarOffcanvasEl
+        ? bootstrap.Offcanvas.getOrCreateInstance(sidebarOffcanvasEl)
+        : null;
+      const mobileSidebarBtn = document.getElementById("sidebarVisibilityBtnMobile");
       function tryToggleSidebar() {
         const isHidden = getSidebarHidden();
         if (isHidden) {
@@ -534,13 +548,24 @@
         }
       }
 
-      for (const btn of sidebarBtns) {
-        btn.addEventListener("click", tryToggleSidebar);
+      if (mobileSidebarBtn) {
+        mobileSidebarBtn.addEventListener("click", () => {
+          sidebarOffcanvas?.show();
+        });
       }
 
       const globalSidebarBtn = document.getElementById("sidebarVisibilityBtnGlobal");
       if (globalSidebarBtn) {
         globalSidebarBtn.addEventListener("click", tryToggleSidebar);
+      }
+
+      if (sidebarOffcanvasEl && mobileSidebarBtn) {
+        sidebarOffcanvasEl.addEventListener("show.bs.offcanvas", () => {
+          mobileSidebarBtn.setAttribute("aria-expanded", "true");
+        });
+        sidebarOffcanvasEl.addEventListener("hidden.bs.offcanvas", () => {
+          mobileSidebarBtn.setAttribute("aria-expanded", "false");
+        });
       }
 
       function interceptPosSystemNav(e) {

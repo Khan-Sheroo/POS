@@ -27,6 +27,7 @@
           <a href="/tables" id="tablesLink" class="btn btn-outline-dark btn-sm d-none">Tables</a>
           <a href="/tables/list" id="posLink" class="btn btn-outline-primary btn-sm d-none">POS</a>
           <button id="themeToggle" class="btn btn-outline-primary btn-sm" type="button">Theme</button>
+          <button id="companyLogoutBtn" class="btn btn-outline-danger btn-sm" type="button">Log out account</button>
         </div>
       </div>
     </nav>
@@ -258,6 +259,13 @@
         sessionStorage.removeItem("pos_authorized");
         sessionStorage.removeItem("closed_tables_authorized");
         sessionStorage.removeItem("closed_tables_mgr_pin");
+      }
+
+      function companyLogout() {
+        clearStaffLocal();
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("company_user_email");
+        window.location.assign("/login");
       }
 
       function show(el, message) {
@@ -742,6 +750,7 @@
       staffLogoutBtn.addEventListener("click", doStaffLogout);
       bootBtn.addEventListener("click", bootstrapManager);
       themeToggle.addEventListener("click", () => setTheme(getTheme() === "dark" ? "light" : "dark"));
+      document.getElementById("companyLogoutBtn")?.addEventListener("click", companyLogout);
 
       document.querySelectorAll(".roster-mgr-key").forEach((btn) => {
         btn.addEventListener("click", () => {
